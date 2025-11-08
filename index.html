@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Забавна Игра - Ролетка с Изображения</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            text-align: center;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 800px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .instructions {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 1.1em;
+        }
+
+        .game-area {
+            position: relative;
+            margin: 30px auto;
+            width: 400px;
+            height: 400px;
+            background: #f0f0f0;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.1);
+        }
+
+        #image-display {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            transition: transform 0.1s ease;
+        }
+
+        .spinning {
+            animation: spin 0.05s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg) scale(1); }
+            50% { transform: rotate(180deg) scale(0.95); }
+            100% { transform: rotate(360deg) scale(1); }
+        }
+
+        .controls {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            margin-top: 30px;
+        }
+
+        button {
+            padding: 15px 40px;
+            font-size: 1.3em;
+            font-weight: bold;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        #start-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        #start-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 7px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        #stop-btn {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+        }
+
+        #stop-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 7px 20px rgba(245, 87, 108, 0.4);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        button:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        /* Fullscreen Modal */
+        .fullscreen-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .fullscreen-modal.active {
+            display: flex;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .fullscreen-image {
+            max-width: 90%;
+            max-height: 90%;
+            object-fit: contain;
+            border-radius: 10px;
+            box-shadow: 0 0 50px rgba(255, 255, 255, 0.3);
+            animation: zoomIn 0.5s ease;
+        }
+
+        @keyframes zoomIn {
+            from {
+                transform: scale(0.5);
+                opacity: 0;
+            }
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .close-btn {
+            position: absolute;
+            top: 20px;
+            right: 30px;
+            font-size: 3em;
+            color: white;
+            cursor: pointer;
+            background: none;
+            border: none;
+            padding: 0;
+            width: 50px;
+            height: 50px;
+            line-height: 50px;
+            transition: transform 0.2s ease;
+        }
+
+        .close-btn:hover {
+            transform: scale(1.2);
+        }
+
+        .status {
+            margin-top: 20px;
+            font-size: 1.2em;
+            color: #667eea;
+            font-weight: bold;
+            min-height: 30px;
+        }
+
+        @media (max-width: 600px) {
+            h1 {
+                font-size: 1.8em;
+            }
+
+            .game-area {
+                width: 300px;
+                height: 300px;
+            }
+
+            .controls {
+                flex-direction: column;
+            }
+
+            button {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎰 Ролетка с Изображения 🎰</h1>
+        <p class="instructions">
+            Натиснете <strong>СТАРТ</strong> за да завъртите ролетката!<br>
+            Натиснете <strong>СТОП</strong> за да спрете и видите изображението!
+        </p>
+
+        <div class="game-area">
+            <img id="image-display" src="" alt="Изображение от играта">
+        </div>
+
+        <div class="controls">
+            <button id="start-btn">🎮 Старт</button>
+            <button id="stop-btn" disabled>⏹️ Стоп</button>
+        </div>
+
+        <div class="status" id="status"></div>
+    </div>
+
+    <!-- Fullscreen Modal -->
+    <div class="fullscreen-modal" id="fullscreen-modal">
+        <button class="close-btn" id="close-btn">&times;</button>
+        <img class="fullscreen-image" id="fullscreen-image" src="" alt="Избрано изображение">
+    </div>
+
+    <script>
+        // Array to hold all image filenames
+        const images = [
+            '1000_F_270057975_y8JCSCniwBJYhq3vuBXWQ319lSWTu3Uj.jpg',
+            '1883a1cee097c9919afae754367f080e.jpg',
+            '33608cae7e207ee0d28ecfe7e6d7c52d.jpg',
+            '35877e8569904ed7e1ddf68e14d1e442.jpg',
+            '55065b4735f76bbeb05849994267425c.jpg',
+            '5c233e7515e9f946f65be43f.jpg',
+            '679e7dd0-af50-11f0-b2a1-6f537f66f9aa.jpg',
+            '6800140fb3c35a318a9ca511c9629e42.jpg',
+            '6c8850b6eb287d5f4101caaec0694605.jpg',
+            '7533421_stock-photo-forever-alone-rage-face-internet-meme-3d-illustration.jpg',
+            '81xuJqvXHhL.png',
+            '85120553.jpg',
+            '9050fc50a1d66b0081d749c85fc41cc2.jpg',
+            'FB_IMG_1762611292638.jpg',
+            'Red-Panda.jpg',
+            'angry_white_wolf__2__by_punkerlazar_dg3uoop-fullview.jpg',
+            'artworks-000096839716-amlze4-t240x240.jpg',
+            'cute-feline-staring-green-grass-generated-by-ai_188544-45225.jpg',
+            'd17ac743f1dbf89c8ce9ef348fedd66e.jpg',
+            'd212ff0f7cd8c01cc28fad71aae36f54.jpg',
+            'd7c7dccac15cc37857f34cd1651dcef2.jpg',
+            'depositphotos_7253633-stock-photo-man-making-a-stupid-face.jpg',
+            'f1ab527bdc8567503c7e3352a13bd5c1.jpg',
+            'funny-face-idiot-moron-fool-260nw-1381519268.jpg',
+            'portrait-of-crazy-bizarre-man-making-faces-F5N0AD.jpg',
+            'res_ac9f38a8f8503076f32302cafbb5ac50.jpg',
+            'running-chihuahua-dog.jpg',
+            'world-most-beautiful-animals-v0-e2739sim27gf1.jpg',
+            'zaq6l.oq1b.2-small-Try-Not-to-Laugh-at-These-F.jpg'
+        ];
+
+        // Game state
+        let currentImageIndex = 0;
+        let isSpinning = false;
+        let spinInterval = null;
+
+        // DOM elements
+        const imageDisplay = document.getElementById('image-display');
+        const startBtn = document.getElementById('start-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        const statusDiv = document.getElementById('status');
+        const fullscreenModal = document.getElementById('fullscreen-modal');
+        const fullscreenImage = document.getElementById('fullscreen-image');
+        const closeBtn = document.getElementById('close-btn');
+
+        // Initialize with first image
+        imageDisplay.src = images[0];
+
+        // Start spinning
+        startBtn.addEventListener('click', () => {
+            if (isSpinning) return;
+
+            isSpinning = true;
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+            statusDiv.textContent = '🎯 Ролетката се върти...';
+
+            imageDisplay.classList.add('spinning');
+
+            // Rapidly change images
+            spinInterval = setInterval(() => {
+                currentImageIndex = (currentImageIndex + 1) % images.length;
+                imageDisplay.src = images[currentImageIndex];
+            }, 50); // Change image every 50ms for fast spinning
+        });
+
+        // Stop spinning and show fullscreen
+        stopBtn.addEventListener('click', () => {
+            if (!isSpinning) return;
+
+            isSpinning = false;
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+
+            // Stop the spinning
+            clearInterval(spinInterval);
+            imageDisplay.classList.remove('spinning');
+
+            // Select a random final image
+            currentImageIndex = Math.floor(Math.random() * images.length);
+            imageDisplay.src = images[currentImageIndex];
+
+            // Show success message
+            statusDiv.textContent = '🎉 Спряхте на изображение!';
+
+            // Show fullscreen after a short delay
+            setTimeout(() => {
+                fullscreenImage.src = images[currentImageIndex];
+                fullscreenModal.classList.add('active');
+                statusDiv.textContent = '';
+            }, 500);
+        });
+
+        // Close fullscreen modal
+        closeBtn.addEventListener('click', () => {
+            fullscreenModal.classList.remove('active');
+        });
+
+        // Close modal on clicking outside the image
+        fullscreenModal.addEventListener('click', (e) => {
+            if (e.target === fullscreenModal) {
+                fullscreenModal.classList.remove('active');
+            }
+        });
+
+        // Close modal with Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && fullscreenModal.classList.contains('active')) {
+                fullscreenModal.classList.remove('active');
+            }
+        });
+
+        // Preload all images for smooth spinning
+        images.forEach(src => {
+            const img = new Image();
+            img.src = src;
+        });
+    </script>
+</body>
+</html>
