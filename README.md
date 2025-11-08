@@ -1,8 +1,44 @@
-# 🎰 Spinning Image Roulette Game
+# 🎮 Game Collection
+
+This repository contains two fun and interactive HTML games:
+
+## 🏋️ Exercise Challenge Game (`exercise_game.html`)
+
+A competitive multiplayer exercise game where players spin to select exercises and repetitions.
+
+### How to Play
+
+1. **Setup**: 
+   - Enter the number of players (1-8)
+   - Set the number of levels/rounds (1-20)
+   - Enter player names
+
+2. **Gameplay**:
+   - Each player takes turns spinning for an exercise
+   - After selecting an exercise, spin for repetitions (5-15)
+   - Accept or decline the challenge:
+     - **Accept & Complete**: +1 point, exercise removed from your pool
+     - **Accept & Fail**: -1 point
+     - **Decline**: 0 points, skip turn
+   - Completed exercises won't appear again for that player
+
+3. **Winning**: Player with the most points after all levels wins!
+
+### Features
+- 🎯 12 exercise images from the `Ex/` folder
+- 🎲 Random exercise and repetition selection
+- 📊 Real-time scoreboards for all players
+- 🏆 Dynamic level progression
+- 💪 Beautiful fullscreen exercise display
+- 📱 Fully responsive design
+
+---
+
+## 🎰 Spinning Image Roulette Game (`index.html`)
 
 A fun and interactive HTML game featuring a spinning image roulette with 29 different images.
 
-## 🎮 How to Play
+## 🎮 How to Play the Roulette Game
 
 1. Open `index.html` in any modern web browser
 2. Click the **🎮 СТАРТ** (Start) button to begin spinning the roulette

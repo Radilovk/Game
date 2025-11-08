@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Игра с Упражнения</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        /* Setup Screen */
+        .setup-screen {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 600px;
+            margin: 50px auto;
+        }
+
+        .setup-screen h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            color: #333;
+            font-weight: bold;
+            margin-bottom: 8px;
+            font-size: 1.1em;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            font-size: 1.1em;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .player-inputs {
+            display: none;
+            margin-top: 20px;
+        }
+
+        .player-input {
+            margin-bottom: 15px;
+        }
+
+        button {
+            padding: 15px 40px;
+            font-size: 1.2em;
+            font-weight: bold;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 7px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .center-btn {
+            display: block;
+            margin: 30px auto 0;
+        }
+
+        /* Game Screen */
+        .game-screen {
+            display: none;
+        }
+
+        .game-header {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .game-header h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .current-turn {
+            font-size: 1.3em;
+            color: #667eea;
+            font-weight: bold;
+        }
+
+        .game-content {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 20px;
+        }
+
+        /* Scoreboards */
+        .scoreboards {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .scoreboard {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            transition: all 0.3s;
+        }
+
+        .scoreboard.active {
+            background: #fff;
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+            transform: scale(1.02);
+        }
+
+        .scoreboard h2 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 1.3em;
+        }
+
+        .score {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .completed-exercises {
+            margin-top: 10px;
+            font-size: 0.9em;
+            color: #666;
+        }
+
+        .exercise-list {
+            max-height: 100px;
+            overflow-y: auto;
+            margin-top: 5px;
+            padding: 5px;
+            background: #f5f5f5;
+            border-radius: 5px;
+        }
+
+        /* Game Area */
+        .game-area {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .spinner-container {
+            margin-bottom: 30px;
+        }
+
+        .spinner-title {
+            color: #333;
+            font-size: 1.5em;
+            font-weight: bold;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .spinner-box {
+            width: 100%;
+            height: 400px;
+            background: #f0f0f0;
+            border-radius: 15px;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+
+        .exercise-image {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            transition: transform 0.05s ease;
+        }
+
+        .spinning-image {
+            animation: spinImage 0.05s linear infinite;
+        }
+
+        @keyframes spinImage {
+            0%, 100% { transform: scale(1) rotate(0deg); }
+            50% { transform: scale(0.95) rotate(180deg); }
+        }
+
+        .repetition-number {
+            font-size: 6em;
+            font-weight: bold;
+            color: #667eea;
+            transition: transform 0.05s ease;
+        }
+
+        .spinning-number {
+            animation: spinNumber 0.05s linear;
+        }
+
+        @keyframes spinNumber {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+
+        .challenge-panel {
+            display: none;
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 15px;
+            margin-top: 20px;
+        }
+
+        .challenge-panel.active {
+            display: block;
+        }
+
+        .challenge-info {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .challenge-info h3 {
+            color: #333;
+            font-size: 1.5em;
+            margin-bottom: 10px;
+        }
+
+        .challenge-info p {
+            font-size: 1.2em;
+            color: #666;
+        }
+
+        .challenge-buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+        }
+
+        .btn-accept {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        }
+
+        .btn-completed {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .btn-failed {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+
+        .btn-decline {
+            background: linear-gradient(135deg, #fc4a1a 0%, #f7b733 100%);
+        }
+
+        /* Fullscreen Modal */
+        .fullscreen-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .fullscreen-modal.active {
+            display: flex;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .fullscreen-image {
+            max-width: 90%;
+            max-height: 90%;
+            object-fit: contain;
+            border-radius: 10px;
+            box-shadow: 0 0 50px rgba(255, 255, 255, 0.3);
+            animation: zoomIn 0.5s ease;
+        }
+
+        @keyframes zoomIn {
+            from {
+                transform: scale(0.5);
+                opacity: 0;
+            }
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .close-btn {
+            position: absolute;
+            top: 20px;
+            right: 30px;
+            font-size: 3em;
+            color: white;
+            cursor: pointer;
+            background: none;
+            border: none;
+            padding: 0;
+            width: 50px;
+            height: 50px;
+            line-height: 50px;
+        }
+
+        .close-btn:hover {
+            transform: scale(1.2);
+        }
+
+        /* Game Over */
+        .game-over-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 1001;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .game-over-modal.active {
+            display: flex;
+        }
+
+        .game-over-content {
+            background: white;
+            padding: 50px;
+            border-radius: 20px;
+            text-align: center;
+            max-width: 600px;
+        }
+
+        .game-over-content h2 {
+            color: #333;
+            font-size: 3em;
+            margin-bottom: 20px;
+        }
+
+        .winner {
+            font-size: 2em;
+            color: #667eea;
+            font-weight: bold;
+            margin-bottom: 30px;
+        }
+
+        .final-scores {
+            text-align: left;
+            margin: 20px 0;
+        }
+
+        .final-scores div {
+            padding: 10px;
+            margin: 5px 0;
+            background: #f5f5f5;
+            border-radius: 8px;
+        }
+
+        @media (max-width: 1024px) {
+            .game-content {
+                grid-template-columns: 1fr;
+            }
+
+            .scoreboards {
+                flex-direction: row;
+                flex-wrap: wrap;
+            }
+
+            .scoreboard {
+                flex: 1;
+                min-width: 200px;
+            }
+        }
+
+        @media (max-width: 600px) {
+            .controls {
+                flex-direction: column;
+            }
+
+            button {
+                width: 100%;
+            }
+
+            .challenge-buttons {
+                flex-direction: column;
+            }
+
+            .spinner-box {
+                height: 300px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Setup Screen -->
+        <div class="setup-screen" id="setup-screen">
+            <h1>🏋️ Игра с Упражнения 🏋️</h1>
+            
+            <div class="form-group">
+                <label for="num-players">Брой играчи:</label>
+                <input type="number" id="num-players" min="1" max="8" value="2">
+            </div>
+
+            <div class="form-group">
+                <label for="num-levels">Брой нива:</label>
+                <input type="number" id="num-levels" min="1" max="20" value="5">
+            </div>
+
+            <button onclick="showPlayerInputs()" class="center-btn">Напред</button>
+
+            <div class="player-inputs" id="player-inputs">
+                <!-- Player name inputs will be added dynamically -->
+            </div>
+
+            <button onclick="startGame()" class="center-btn" id="start-game-btn" style="display: none;">
+                Започни Игра
+            </button>
+        </div>
+
+        <!-- Game Screen -->
+        <div class="game-screen" id="game-screen">
+            <div class="game-header">
+                <h1>🏋️ Игра с Упражнения 🏋️</h1>
+                <div class="current-turn" id="current-turn"></div>
+            </div>
+
+            <div class="game-content">
+                <!-- Scoreboards -->
+                <div class="scoreboards" id="scoreboards">
+                    <!-- Scoreboards will be added dynamically -->
+                </div>
+
+                <!-- Game Area -->
+                <div class="game-area">
+                    <div class="spinner-container" id="exercise-spinner-container">
+                        <div class="spinner-title">Избери Упражнение</div>
+                        <div class="spinner-box">
+                            <img class="exercise-image" id="exercise-image" src="" alt="Упражнение">
+                        </div>
+                        <div class="controls">
+                            <button id="start-exercise-btn" onclick="startExerciseSpin()">
+                                🎮 Старт
+                            </button>
+                            <button id="stop-exercise-btn" onclick="stopExerciseSpin()" disabled>
+                                ⏹️ Стоп
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="spinner-container" id="reps-spinner-container" style="display: none;">
+                        <div class="spinner-title">Избери Брой Повторения</div>
+                        <div class="spinner-box">
+                            <div class="repetition-number" id="repetition-number">10</div>
+                        </div>
+                        <div class="controls">
+                            <button id="start-reps-btn" onclick="startRepsSpin()">
+                                🎮 Старт
+                            </button>
+                            <button id="stop-reps-btn" onclick="stopRepsSpin()" disabled>
+                                ⏹️ Стоп
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="challenge-panel" id="challenge-panel">
+                        <div class="challenge-info">
+                            <h3 id="challenge-exercise">Упражнение</h3>
+                            <p>Повторения: <span id="challenge-reps">10</span></p>
+                        </div>
+                        <div class="challenge-buttons" id="challenge-accept-buttons">
+                            <button class="btn-accept" onclick="acceptChallenge()">
+                                ✓ Приемам
+                            </button>
+                            <button class="btn-decline" onclick="declineChallenge()">
+                                ✗ Отказвам
+                            </button>
+                        </div>
+                        <div class="challenge-buttons" id="challenge-result-buttons" style="display: none;">
+                            <button class="btn-completed" onclick="completeChallenge()">
+                                ✓ Изпълних
+                            </button>
+                            <button class="btn-failed" onclick="failChallenge()">
+                                ✗ Не успях
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Fullscreen Modal -->
+    <div class="fullscreen-modal" id="fullscreen-modal">
+        <button class="close-btn" onclick="closeFullscreen()">&times;</button>
+        <img class="fullscreen-image" id="fullscreen-image" src="" alt="Избрано упражнение">
+    </div>
+
+    <!-- Game Over Modal -->
+    <div class="game-over-modal" id="game-over-modal">
+        <div class="game-over-content">
+            <h2>🎉 Играта Приключи! 🎉</h2>
+            <div class="winner" id="winner-text"></div>
+            <div class="final-scores" id="final-scores"></div>
+            <button onclick="location.reload()" class="center-btn">
+                Нова Игра
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // Exercise images from Ex folder
+        const exerciseImages = [
+            'Ex/1_arm_dumbbell_row_480x480.jpg',
+            'Ex/Lower-Abs-Exercises_619ac88b-ec3d-43ff-a79f-e90f2de9f73d.jpg',
+            'Ex/Using_the_Ab_Wheel.jpg',
+            'Ex/What_Muscles_do_Burpees_Work.jpg',
+            'Ex/___.jpg',
+            'Ex/dumbbell-biceps-curl.jpg',
+            'Ex/dumbbell-standing-overhead-press.jpg',
+            'Ex/goblet-squat-1594986802.jpg',
+            'Ex/image_iphone.jpg',
+            'Ex/img-2358-jpg-1575476450.jpg',
+            'Ex/mikolo-pull-ups-blog-2.png',
+            'Ex/military-push-ups.png'
+        ];
+
+        // Game state
+        let gameState = {
+            players: [],
+            currentPlayerIndex: 0,
+            totalLevels: 5,
+            isSpinning: false,
+            spinInterval: null,
+            currentExerciseIndex: 0,
+            currentReps: 10,
+            selectedExercise: null,
+            selectedReps: 0,
+            challengeAccepted: false
+        };
+
+        // Show player name inputs
+        function showPlayerInputs() {
+            const numPlayers = parseInt(document.getElementById('num-players').value);
+            const numLevels = parseInt(document.getElementById('num-levels').value);
+            
+            if (numPlayers < 1 || numPlayers > 8) {
+                alert('Моля въведете между 1 и 8 играча!');
+                return;
+            }
+
+            if (numLevels < 1 || numLevels > 20) {
+                alert('Моля въведете между 1 и 20 нива!');
+                return;
+            }
+
+            gameState.totalLevels = numLevels;
+            
+            const playerInputsDiv = document.getElementById('player-inputs');
+            playerInputsDiv.innerHTML = '<h3 style="margin: 20px 0; color: #333;">Имена на играчите:</h3>';
+            
+            for (let i = 0; i < numPlayers; i++) {
+                const input = document.createElement('div');
+                input.className = 'player-input';
+                input.innerHTML = `
+                    <label>Играч ${i + 1}:</label>
+                    <input type="text" id="player-name-${i}" placeholder="Име на играч ${i + 1}" required>
+                `;
+                playerInputsDiv.appendChild(input);
+            }
+            
+            playerInputsDiv.style.display = 'block';
+            document.getElementById('start-game-btn').style.display = 'block';
+        }
+
+        // Start the game
+        function startGame() {
+            const numPlayers = parseInt(document.getElementById('num-players').value);
+            gameState.players = [];
+
+            // Collect player names
+            for (let i = 0; i < numPlayers; i++) {
+                const name = document.getElementById(`player-name-${i}`).value.trim();
+                if (!name) {
+                    alert(`Моля въведете име за Играч ${i + 1}!`);
+                    return;
+                }
+                gameState.players.push({
+                    name: name,
+                    score: 0,
+                    completedExercises: [],
+                    availableExercises: [...exerciseImages]
+                });
+            }
+
+            // Hide setup screen, show game screen
+            document.getElementById('setup-screen').style.display = 'none';
+            document.getElementById('game-screen').style.display = 'block';
+
+            // Create scoreboards
+            createScoreboards();
+
+            // Set first player's turn
+            updateTurn();
+
+            // Initialize exercise image
+            document.getElementById('exercise-image').src = exerciseImages[0];
+        }
+
+        // Create scoreboards for all players
+        function createScoreboards() {
+            const scoreboardsDiv = document.getElementById('scoreboards');
+            scoreboardsDiv.innerHTML = '';
+
+            gameState.players.forEach((player, index) => {
+                const scoreboard = document.createElement('div');
+                scoreboard.className = 'scoreboard';
+                scoreboard.id = `scoreboard-${index}`;
+                scoreboard.innerHTML = `
+                    <h2>${player.name}</h2>
+                    <div class="score">Точки: <span id="score-${index}">0</span></div>
+                    <div class="completed-exercises">
+                        <strong>Изпълнени упражнения: <span id="completed-count-${index}">0</span></strong>
+                        <div class="exercise-list" id="exercise-list-${index}"></div>
+                    </div>
+                `;
+                scoreboardsDiv.appendChild(scoreboard);
+            });
+        }
+
+        // Update current player's turn
+        function updateTurn() {
+            const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+            document.getElementById('current-turn').textContent = 
+                `Ред на: ${currentPlayer.name} (Ниво ${currentPlayer.completedExercises.length + 1}/${gameState.totalLevels})`;
+
+            // Highlight current player's scoreboard
+            document.querySelectorAll('.scoreboard').forEach((board, index) => {
+                if (index === gameState.currentPlayerIndex) {
+                    board.classList.add('active');
+                } else {
+                    board.classList.remove('active');
+                }
+            });
+
+            // Reset UI for new turn
+            document.getElementById('exercise-spinner-container').style.display = 'block';
+            document.getElementById('reps-spinner-container').style.display = 'none';
+            document.getElementById('challenge-panel').classList.remove('active');
+            document.getElementById('start-exercise-btn').disabled = false;
+        }
+
+        // Start exercise spinning
+        function startExerciseSpin() {
+            const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+            
+            if (currentPlayer.availableExercises.length === 0) {
+                alert('Няма повече налични упражнения за този играч!');
+                nextPlayer();
+                return;
+            }
+
+            gameState.isSpinning = true;
+            document.getElementById('start-exercise-btn').disabled = true;
+            document.getElementById('stop-exercise-btn').disabled = false;
+
+            const exerciseImage = document.getElementById('exercise-image');
+            exerciseImage.classList.add('spinning-image');
+
+            // Rapidly change images
+            gameState.spinInterval = setInterval(() => {
+                gameState.currentExerciseIndex = (gameState.currentExerciseIndex + 1) % currentPlayer.availableExercises.length;
+                exerciseImage.src = currentPlayer.availableExercises[gameState.currentExerciseIndex];
+            }, 50);
+        }
+
+        // Stop exercise spinning
+        function stopExerciseSpin() {
+            if (!gameState.isSpinning) return;
+
+            gameState.isSpinning = false;
+            document.getElementById('stop-exercise-btn').disabled = true;
+
+            // Stop the spinning
+            clearInterval(gameState.spinInterval);
+            
+            const exerciseImage = document.getElementById('exercise-image');
+            exerciseImage.classList.remove('spinning-image');
+
+            // Select a random final exercise
+            const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+            gameState.currentExerciseIndex = Math.floor(Math.random() * currentPlayer.availableExercises.length);
+            gameState.selectedExercise = currentPlayer.availableExercises[gameState.currentExerciseIndex];
+            exerciseImage.src = gameState.selectedExercise;
+
+            // Show fullscreen after a short delay
+            setTimeout(() => {
+                document.getElementById('fullscreen-image').src = gameState.selectedExercise;
+                document.getElementById('fullscreen-modal').classList.add('active');
+            }, 300);
+        }
+
+        // Close fullscreen modal
+        function closeFullscreen() {
+            document.getElementById('fullscreen-modal').classList.remove('active');
+            
+            // Show repetition spinner
+            document.getElementById('exercise-spinner-container').style.display = 'none';
+            document.getElementById('reps-spinner-container').style.display = 'block';
+            document.getElementById('start-reps-btn').disabled = false;
+        }
+
+        // Start repetition spinning
+        function startRepsSpin() {
+            gameState.isSpinning = true;
+            document.getElementById('start-reps-btn').disabled = true;
+            document.getElementById('stop-reps-btn').disabled = false;
+
+            const repsNumber = document.getElementById('repetition-number');
+
+            // Rapidly change numbers
+            gameState.spinInterval = setInterval(() => {
+                gameState.currentReps = 5 + Math.floor(Math.random() * 11); // 5-15
+                repsNumber.textContent = gameState.currentReps;
+                repsNumber.classList.add('spinning-number');
+                setTimeout(() => repsNumber.classList.remove('spinning-number'), 50);
+            }, 50);
+        }
+
+        // Stop repetition spinning
+        function stopRepsSpin() {
+            if (!gameState.isSpinning) return;
+
+            gameState.isSpinning = false;
+            document.getElementById('stop-reps-btn').disabled = true;
+
+            // Stop the spinning
+            clearInterval(gameState.spinInterval);
+
+            // Select final reps number
+            gameState.selectedReps = 5 + Math.floor(Math.random() * 11); // 5-15
+            document.getElementById('repetition-number').textContent = gameState.selectedReps;
+
+            // Show challenge panel
+            setTimeout(() => {
+                const exerciseName = gameState.selectedExercise.split('/').pop().replace(/\.(jpg|png)$/i, '').replace(/[-_]/g, ' ');
+                document.getElementById('challenge-exercise').textContent = exerciseName;
+                document.getElementById('challenge-reps').textContent = gameState.selectedReps;
+                document.getElementById('challenge-panel').classList.add('active');
+                document.getElementById('challenge-accept-buttons').style.display = 'flex';
+                document.getElementById('challenge-result-buttons').style.display = 'none';
+            }, 300);
+        }
+
+        // Accept challenge
+        function acceptChallenge() {
+            gameState.challengeAccepted = true;
+            document.getElementById('challenge-accept-buttons').style.display = 'none';
+            document.getElementById('challenge-result-buttons').style.display = 'flex';
+        }
+
+        // Decline challenge
+        function declineChallenge() {
+            gameState.challengeAccepted = false;
+            // Score stays the same, move to next player
+            nextPlayer();
+        }
+
+        // Complete challenge successfully
+        function completeChallenge() {
+            const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+            
+            // Add point
+            currentPlayer.score += 1;
+            
+            // Add exercise to completed
+            currentPlayer.completedExercises.push(gameState.selectedExercise);
+            
+            // Remove exercise from available
+            currentPlayer.availableExercises = currentPlayer.availableExercises.filter(
+                ex => ex !== gameState.selectedExercise
+            );
+
+            updateScoreboard();
+            checkGameOver();
+        }
+
+        // Fail challenge
+        function failChallenge() {
+            const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+            
+            // Subtract point
+            currentPlayer.score -= 1;
+
+            updateScoreboard();
+            nextPlayer();
+        }
+
+        // Update scoreboard display
+        function updateScoreboard() {
+            const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+            const index = gameState.currentPlayerIndex;
+            
+            document.getElementById(`score-${index}`).textContent = currentPlayer.score;
+            document.getElementById(`completed-count-${index}`).textContent = currentPlayer.completedExercises.length;
+            
+            const exerciseList = document.getElementById(`exercise-list-${index}`);
+            exerciseList.innerHTML = currentPlayer.completedExercises.map(ex => {
+                const name = ex.split('/').pop().replace(/\.(jpg|png)$/i, '').replace(/[-_]/g, ' ');
+                return `<div style="padding: 2px; font-size: 0.85em;">✓ ${name}</div>`;
+            }).join('');
+        }
+
+        // Check if game is over
+        function checkGameOver() {
+            const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+            
+            // Check if current player completed all levels
+            if (currentPlayer.completedExercises.length >= gameState.totalLevels) {
+                // Check if all players completed their turns at this level
+                let allPlayersAtLevel = true;
+                for (let i = 0; i < gameState.players.length; i++) {
+                    if (gameState.players[i].completedExercises.length < gameState.totalLevels) {
+                        allPlayersAtLevel = false;
+                        break;
+                    }
+                }
+
+                if (allPlayersAtLevel) {
+                    showGameOver();
+                    return;
+                }
+            }
+
+            nextPlayer();
+        }
+
+        // Move to next player
+        function nextPlayer() {
+            gameState.currentPlayerIndex = (gameState.currentPlayerIndex + 1) % gameState.players.length;
+            
+            // Check if we've cycled through all players and any reached level limit
+            let gameIsOver = false;
+            for (let player of gameState.players) {
+                if (player.completedExercises.length >= gameState.totalLevels) {
+                    gameIsOver = true;
+                    break;
+                }
+            }
+
+            if (gameIsOver) {
+                // Give other players a chance if they haven't completed their turns
+                let allAtMaxOrNoExercises = true;
+                for (let player of gameState.players) {
+                    if (player.completedExercises.length < gameState.totalLevels && player.availableExercises.length > 0) {
+                        allAtMaxOrNoExercises = false;
+                        break;
+                    }
+                }
+
+                if (allAtMaxOrNoExercises) {
+                    showGameOver();
+                    return;
+                }
+            }
+
+            // Skip players who have no available exercises or completed all levels
+            let skipped = 0;
+            while ((gameState.players[gameState.currentPlayerIndex].availableExercises.length === 0 || 
+                    gameState.players[gameState.currentPlayerIndex].completedExercises.length >= gameState.totalLevels) &&
+                   skipped < gameState.players.length) {
+                gameState.currentPlayerIndex = (gameState.currentPlayerIndex + 1) % gameState.players.length;
+                skipped++;
+            }
+
+            if (skipped === gameState.players.length) {
+                showGameOver();
+                return;
+            }
+
+            updateTurn();
+        }
+
+        // Show game over screen
+        function showGameOver() {
+            // Find winner(s)
+            let maxScore = Math.max(...gameState.players.map(p => p.score));
+            let winners = gameState.players.filter(p => p.score === maxScore);
+
+            let winnerText = '';
+            if (winners.length === 1) {
+                winnerText = `🏆 Победител: ${winners[0].name} 🏆`;
+            } else {
+                winnerText = `🏆 Равенство между: ${winners.map(w => w.name).join(', ')} 🏆`;
+            }
+
+            document.getElementById('winner-text').textContent = winnerText;
+
+            // Sort players by score
+            const sortedPlayers = [...gameState.players].sort((a, b) => b.score - a.score);
+            
+            const finalScoresHTML = sortedPlayers.map((player, index) => `
+                <div>
+                    <strong>${index + 1}. ${player.name}</strong> - 
+                    Точки: ${player.score} | 
+                    Изпълнени: ${player.completedExercises.length}
+                </div>
+            `).join('');
+
+            document.getElementById('final-scores').innerHTML = finalScoresHTML;
+            document.getElementById('game-over-modal').classList.add('active');
+        }
+
+        // Close modals with Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                if (document.getElementById('fullscreen-modal').classList.contains('active')) {
+                    closeFullscreen();
+                }
+            }
+        });
+
+        // Preload all exercise images
+        exerciseImages.forEach(src => {
+            const img = new Image();
+            img.src = src;
+        });
+    </script>
+</body>
+</html>
