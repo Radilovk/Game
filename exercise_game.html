@@ -40,6 +40,45 @@
             font-size: 2.5em;
         }
 
+        .mode-selection {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-bottom: 30px;
+        }
+
+        .mode-card {
+            flex: 1;
+            padding: 20px;
+            border: 3px solid #ddd;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: white;
+        }
+
+        .mode-card:hover {
+            border-color: #667eea;
+            transform: translateY(-3px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+        }
+
+        .mode-card.selected {
+            border-color: #667eea;
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+        }
+
+        .mode-card h3 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 1.3em;
+        }
+
+        .mode-card p {
+            color: #666;
+            font-size: 0.95em;
+        }
+
         .form-group {
             margin-bottom: 20px;
         }
@@ -107,6 +146,17 @@
         /* Game Screen */
         .game-screen {
             display: none;
+        }
+
+        .split-screen-mode .game-content {
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .split-screen-mode .player-section {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
         }
 
         .game-header {
@@ -266,6 +316,45 @@
             display: block;
         }
 
+        .combo-exercises {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .combo-exercise-item {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .combo-exercise-item img {
+            width: 80px;
+            height: 80px;
+            object-fit: cover;
+            border-radius: 8px;
+        }
+
+        .combo-exercise-info {
+            flex: 1;
+        }
+
+        .combo-exercise-info h4 {
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .combo-exercise-info p {
+            color: #667eea;
+            font-weight: bold;
+            font-size: 1.1em;
+        }
+
         .challenge-info {
             text-align: center;
             margin-bottom: 20px;
@@ -423,6 +512,10 @@
                 grid-template-columns: 1fr;
             }
 
+            .split-screen-mode .game-content {
+                grid-template-columns: 1fr;
+            }
+
             .scoreboards {
                 flex-direction: row;
                 flex-wrap: wrap;
@@ -459,6 +552,20 @@
         <div class="setup-screen" id="setup-screen">
             <h1>🏋️ Игра с Упражнения 🏋️</h1>
             
+            <div class="form-group">
+                <label>Изберете режим на игра:</label>
+                <div class="mode-selection">
+                    <div class="mode-card selected" onclick="selectMode('single')" id="mode-single">
+                        <h3>🎯 Единично упражнение</h3>
+                        <p>Въртете за 1 упражнение на ниво</p>
+                    </div>
+                    <div class="mode-card" onclick="selectMode('combo')" id="mode-combo">
+                        <h3>🔥 Комбо от 3 упражнения</h3>
+                        <p>Въртете за 3 упражнения едно след друго</p>
+                    </div>
+                </div>
+            </div>
+
             <div class="form-group">
                 <label for="num-players">Брой играчи:</label>
                 <input type="number" id="num-players" min="1" max="8" value="2">
@@ -527,8 +634,17 @@
 
                     <div class="challenge-panel" id="challenge-panel">
                         <div class="challenge-info">
-                            <h3 id="challenge-exercise">Упражнение</h3>
-                            <p>Повторения: <span id="challenge-reps">10</span></p>
+                            <h3 id="challenge-title">Упражнение</h3>
+                            <div id="single-exercise-display" style="display: none;">
+                                <p id="challenge-exercise">Упражнение</p>
+                                <p>Повторения: <span id="challenge-reps">10</span></p>
+                            </div>
+                            <div id="combo-exercise-display" style="display: none;">
+                                <h4 style="color: #667eea; margin-bottom: 15px;">Комбо от 3 упражнения:</h4>
+                                <div class="combo-exercises" id="combo-exercises-list">
+                                    <!-- Combo exercises will be added here dynamically -->
+                                </div>
+                            </div>
                         </div>
                         <div class="challenge-buttons" id="challenge-accept-buttons">
                             <button class="btn-accept" onclick="acceptChallenge()">
@@ -592,14 +708,25 @@
             players: [],
             currentPlayerIndex: 0,
             totalLevels: 5,
+            gameMode: 'single', // 'single' or 'combo'
             isSpinning: false,
             spinInterval: null,
             currentExerciseIndex: 0,
             currentReps: 10,
             selectedExercise: null,
             selectedReps: 0,
+            comboExercises: [], // Array of {exercise, reps} for combo mode
+            currentComboStep: 0, // Current step in combo (0, 1, or 2)
             challengeAccepted: false
         };
+
+        // Select game mode
+        function selectMode(mode) {
+            gameState.gameMode = mode;
+            document.getElementById('mode-single').classList.remove('selected');
+            document.getElementById('mode-combo').classList.remove('selected');
+            document.getElementById(`mode-${mode}`).classList.add('selected');
+        }
 
         // Show player name inputs
         function showPlayerInputs() {
@@ -659,6 +786,11 @@
             document.getElementById('setup-screen').style.display = 'none';
             document.getElementById('game-screen').style.display = 'block';
 
+            // Enable split-screen mode for 2 players
+            if (numPlayers === 2) {
+                document.getElementById('game-screen').classList.add('split-screen-mode');
+            }
+
             // Create scoreboards
             createScoreboards();
 
@@ -710,6 +842,10 @@
             document.getElementById('reps-spinner-container').style.display = 'none';
             document.getElementById('challenge-panel').classList.remove('active');
             document.getElementById('start-exercise-btn').disabled = false;
+            
+            // Reset combo state
+            gameState.comboExercises = [];
+            gameState.currentComboStep = 0;
         }
 
         // Start exercise spinning
@@ -760,16 +896,41 @@
                 document.getElementById('fullscreen-image').src = gameState.selectedExercise;
                 document.getElementById('fullscreen-modal').classList.add('active');
             }, 300);
+
+            // In combo mode, also spin for reps and save
+            if (gameState.gameMode === 'combo') {
+                setTimeout(() => {
+                    document.getElementById('fullscreen-modal').classList.remove('active');
+                    document.getElementById('reps-spinner-container').style.display = 'block';
+                    document.getElementById('exercise-spinner-container').style.display = 'none';
+                    document.getElementById('start-reps-btn').disabled = false;
+                }, 1500);
+            }
         }
 
         // Close fullscreen modal
         function closeFullscreen() {
             document.getElementById('fullscreen-modal').classList.remove('active');
             
-            // Show repetition spinner
-            document.getElementById('exercise-spinner-container').style.display = 'none';
-            document.getElementById('reps-spinner-container').style.display = 'block';
-            document.getElementById('start-reps-btn').disabled = false;
+            if (gameState.gameMode === 'combo') {
+                // In combo mode, continue to next exercise or show reps spinner
+                gameState.currentComboStep++;
+                
+                if (gameState.currentComboStep < 3) {
+                    // Select next exercise in combo
+                    document.getElementById('exercise-spinner-container').style.display = 'block';
+                    document.getElementById('reps-spinner-container').style.display = 'none';
+                    document.getElementById('start-exercise-btn').disabled = false;
+                } else {
+                    // All 3 exercises selected, show challenge
+                    showComboChallenge();
+                }
+            } else {
+                // Single mode - show repetition spinner
+                document.getElementById('exercise-spinner-container').style.display = 'none';
+                document.getElementById('reps-spinner-container').style.display = 'block';
+                document.getElementById('start-reps-btn').disabled = false;
+            }
         }
 
         // Start repetition spinning
@@ -803,15 +964,70 @@
             gameState.selectedReps = 5 + Math.floor(Math.random() * 11); // 5-15
             document.getElementById('repetition-number').textContent = gameState.selectedReps;
 
-            // Show challenge panel
-            setTimeout(() => {
-                const exerciseName = gameState.selectedExercise.split('/').pop().replace(/\.(jpg|png)$/i, '').replace(/[-_]/g, ' ');
-                document.getElementById('challenge-exercise').textContent = exerciseName;
-                document.getElementById('challenge-reps').textContent = gameState.selectedReps;
-                document.getElementById('challenge-panel').classList.add('active');
-                document.getElementById('challenge-accept-buttons').style.display = 'flex';
-                document.getElementById('challenge-result-buttons').style.display = 'none';
-            }, 300);
+            if (gameState.gameMode === 'combo') {
+                // Save exercise and reps to combo array
+                gameState.comboExercises.push({
+                    exercise: gameState.selectedExercise,
+                    reps: gameState.selectedReps
+                });
+
+                // Check if we have all 3 exercises
+                if (gameState.comboExercises.length < 3) {
+                    // Continue to next exercise
+                    setTimeout(() => {
+                        document.getElementById('reps-spinner-container').style.display = 'none';
+                        document.getElementById('exercise-spinner-container').style.display = 'block';
+                        document.getElementById('start-exercise-btn').disabled = false;
+                    }, 500);
+                } else {
+                    // All 3 exercises selected, show combo challenge
+                    setTimeout(() => {
+                        showComboChallenge();
+                    }, 500);
+                }
+            } else {
+                // Single mode - show challenge panel
+                setTimeout(() => {
+                    const exerciseName = gameState.selectedExercise.split('/').pop().replace(/\.(jpg|png)$/i, '').replace(/[-_]/g, ' ');
+                    document.getElementById('challenge-title').textContent = 'Вашето Предизвикателство';
+                    document.getElementById('challenge-exercise').textContent = exerciseName;
+                    document.getElementById('challenge-reps').textContent = gameState.selectedReps;
+                    document.getElementById('single-exercise-display').style.display = 'block';
+                    document.getElementById('combo-exercise-display').style.display = 'none';
+                    document.getElementById('challenge-panel').classList.add('active');
+                    document.getElementById('challenge-accept-buttons').style.display = 'flex';
+                    document.getElementById('challenge-result-buttons').style.display = 'none';
+                }, 300);
+            }
+        }
+
+        // Show combo challenge
+        function showComboChallenge() {
+            document.getElementById('reps-spinner-container').style.display = 'none';
+            
+            const comboList = document.getElementById('combo-exercises-list');
+            comboList.innerHTML = '';
+            
+            gameState.comboExercises.forEach((combo, index) => {
+                const exerciseName = combo.exercise.split('/').pop().replace(/\.(jpg|png)$/i, '').replace(/[-_]/g, ' ');
+                const item = document.createElement('div');
+                item.className = 'combo-exercise-item';
+                item.innerHTML = `
+                    <img src="${combo.exercise}" alt="${exerciseName}">
+                    <div class="combo-exercise-info">
+                        <h4>${index + 1}. ${exerciseName}</h4>
+                        <p>${combo.reps} повторения</p>
+                    </div>
+                `;
+                comboList.appendChild(item);
+            });
+
+            document.getElementById('challenge-title').textContent = 'Вашето Комбо Предизвикателство';
+            document.getElementById('single-exercise-display').style.display = 'none';
+            document.getElementById('combo-exercise-display').style.display = 'block';
+            document.getElementById('challenge-panel').classList.add('active');
+            document.getElementById('challenge-accept-buttons').style.display = 'flex';
+            document.getElementById('challenge-result-buttons').style.display = 'none';
         }
 
         // Accept challenge
@@ -832,16 +1048,30 @@
         function completeChallenge() {
             const currentPlayer = gameState.players[gameState.currentPlayerIndex];
             
-            // Add point
-            currentPlayer.score += 1;
-            
-            // Add exercise to completed
-            currentPlayer.completedExercises.push(gameState.selectedExercise);
-            
-            // Remove exercise from available
-            currentPlayer.availableExercises = currentPlayer.availableExercises.filter(
-                ex => ex !== gameState.selectedExercise
-            );
+            if (gameState.gameMode === 'combo') {
+                // Add 3 points for completing combo (1 per exercise)
+                currentPlayer.score += 3;
+                
+                // Add all 3 exercises to completed
+                gameState.comboExercises.forEach(combo => {
+                    currentPlayer.completedExercises.push(combo.exercise);
+                    // Remove exercise from available
+                    currentPlayer.availableExercises = currentPlayer.availableExercises.filter(
+                        ex => ex !== combo.exercise
+                    );
+                });
+            } else {
+                // Add point
+                currentPlayer.score += 1;
+                
+                // Add exercise to completed
+                currentPlayer.completedExercises.push(gameState.selectedExercise);
+                
+                // Remove exercise from available
+                currentPlayer.availableExercises = currentPlayer.availableExercises.filter(
+                    ex => ex !== gameState.selectedExercise
+                );
+            }
 
             updateScoreboard();
             checkGameOver();
@@ -851,8 +1081,13 @@
         function failChallenge() {
             const currentPlayer = gameState.players[gameState.currentPlayerIndex];
             
-            // Subtract point
-            currentPlayer.score -= 1;
+            if (gameState.gameMode === 'combo') {
+                // Subtract 3 points for failing combo
+                currentPlayer.score -= 3;
+            } else {
+                // Subtract point
+                currentPlayer.score -= 1;
+            }
 
             updateScoreboard();
             nextPlayer();
