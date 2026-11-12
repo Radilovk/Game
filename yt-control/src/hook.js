@@ -126,6 +126,10 @@
       return null;
     }
 
+    const SKIP = new Set(['streamingData', 'responseContext', 'frameworkUpdates', 'microformat', 'trackingParams',
+      'loggingDirectives', 'accessibility', 'accessibilityData', 'thumbnail', 'thumbnails', 'commandMetadata',
+      'storyboards', 'captions', 'heartbeatParams', 'playbackTracking', 'videoDetails', 'attestation', 'annotations',
+      'clickTrackingParams', 'serviceTrackingParams', 'webCommandMetadata', 'menu', 'richThumbnail', 'inlinePlaybackEndpoint']);
     function walk(o, depth) {
       if (!o || typeof o !== 'object' || depth > 60) return;
       if (Array.isArray(o)) {
@@ -136,7 +140,7 @@
         return;
       }
       if (S.hideAds) for (const k of PLAYER_AD_KEYS) if (k in o) { delete o[k]; stats.ads++; }
-      for (const k in o) { const v = o[k]; if (v && typeof v === 'object') walk(v, depth + 1); }
+      for (const k in o) { if (SKIP.has(k)) continue; const v = o[k]; if (v && typeof v === 'object') walk(v, depth + 1); }
     }
 
     let reported = false, statsTimer = 0;

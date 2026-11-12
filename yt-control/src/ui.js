@@ -158,6 +158,14 @@
       });
       sheet.appendChild(chanBtn);
 
+      // само в Android приложението: линковете към YouTube да се отварят тук, а не в официалното приложение
+      if (window.YTCApp && typeof window.YTCApp.openLinkSettings === 'function') {
+        const lb = el('button', 'act', '🔗 Отваряй YouTube линковете в YT Контрол');
+        lb.style.color = '#0a84ff';
+        lb.addEventListener('click', () => { try { window.YTCApp.openLinkSettings(); } catch (e) { /* */ } });
+        sheet.appendChild(lb);
+      }
+
       note = el('div', 'note');
       note.appendChild(el('span', null, 'Някои промени важат напълно след презареждане.'));
       const rl = el('button', null, 'Презареди'); rl.addEventListener('click', () => location.reload());

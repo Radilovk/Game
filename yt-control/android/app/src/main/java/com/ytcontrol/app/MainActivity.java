@@ -18,7 +18,6 @@ import android.view.WindowInsetsController;
 import android.webkit.CookieManager;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
-import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -28,7 +27,6 @@ import android.widget.Toast;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
 
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -37,7 +35,6 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -46,7 +43,8 @@ import java.util.regex.Pattern;
  *
  * Модулът (същият JS като за iPhone) се вкарва в страницата от самата система
  * (addDocumentStartJavaScript) – преди кода на YouTube и без да зависи от CSP на сайта.
- * Допълнително рекламните заявки се спират на мрежово ниво (shouldInterceptRequest).
+ * Мрежови заявки НЕ се блокират: YouTube разпознава блокерите по тях и нарочно забавя видеото.
+ * Рекламите се махат от данните, а ако мине някоя – прескача се за миг.
  */
 public class MainActivity extends Activity {
 
@@ -80,6 +78,11 @@ public class MainActivity extends Activity {
         s.setLoadWithOverviewMode(true);
         s.setUseWideViewPort(true);
         s.setSupportMultipleWindows(false);
+        // Същият двигател като Chrome (Android System WebView). Махаме маркера "wv",
+        // за да получим същата бърза версия на сайта, която получава Chrome.
+        s.setUserAgentString(s.getUserAgentString().replace("; wv)", ")").replace(" Version/4.0", ""));
+        s.setOffscreenPreRaster(true);              // по-плавен скрол – WebView е целият екран
+        web.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false);
         s.setJavaScriptCanOpenWindowsAutomatically(false);
 
         CookieManager cm = CookieManager.getInstance();
@@ -92,6 +95,7 @@ public class MainActivity extends Activity {
             docStartInjected = true;
         }
 
+        web.addJavascriptInterface(new Bridge(), "YTCApp");
         web.setWebViewClient(new Client());
         web.setWebChromeClient(new Chrome());
 
@@ -99,6 +103,45 @@ public class MainActivity extends Activity {
         else web.loadUrl(resolve(getIntent()));
 
         checkForScriptUpdate();
+        if (savedInstanceState == null) ui.postDelayed(this::maybeAskOpenLinks, 2500);
+    }
+
+    // ---------------------------------------------------------------- линкове по подразбиране
+
+    /**
+     * Еднократно предлага YouTube линковете (от чатове, Google и др.) да се отварят тук,
+     * а не в официалното приложение YouTube.
+     */
+    private void maybeAskOpenLinks() {
+        android.content.SharedPreferences p = getSharedPreferences("ytc", MODE_PRIVATE);
+        if (p.getBoolean("askedLinks", false) || isFinishing()) return;
+        p.edit().putBoolean("askedLinks", true).apply();
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Отваряй YouTube линковете тук")
+                .setMessage("Така линковете от чатове и сайтове ще се отварят в YT Контрол (без Shorts и реклами), а не в приложението YouTube.\n\n"
+                        + "На следващия екран натисни „Добавяне на връзка“ и отметни всички адреси на YouTube.")
+                .setPositiveButton("Настрой", (d, w) -> openLinkSettings())
+                .setNegativeButton("По-късно", null)
+                .show();
+    }
+
+    /** Мост за панела 🛡 в страницата. Само едно безопасно действие – отваряне на системна настройка. */
+    private class Bridge {
+        @android.webkit.JavascriptInterface
+        public void openLinkSettings() { ui.post(MainActivity.this::openLinkSettings); }
+    }
+
+    private void openLinkSettings() {
+        Intent i;
+        if (android.os.Build.VERSION.SDK_INT >= 31) {
+            i = new Intent(android.provider.Settings.ACTION_APP_OPEN_BY_DEFAULT_SETTINGS, Uri.parse("package:" + getPackageName()));
+        } else {
+            i = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName()));
+        }
+        try { startActivity(i); } catch (ActivityNotFoundException e) {
+            try { startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName()))); }
+            catch (ActivityNotFoundException ignored) { }
+        }
     }
 
     @Override
@@ -177,26 +220,6 @@ public class MainActivity extends Activity {
     // ---------------------------------------------------------------- WebView клиент
 
 
-    private WebResourceResponse blocked() {
-        return new WebResourceResponse("text/plain", "utf-8", 204, "No Content",
-                new HashMap<>(), new ByteArrayInputStream(new byte[0]));
-    }
-
-    /** Мрежово блокиране на реклами и рекламна статистика. Консервативно – нищо, от което зависи видеото. */
-    private static boolean isAdRequest(Uri u) {
-        String h = u.getHost() == null ? "" : u.getHost().toLowerCase();
-        String p = u.getPath() == null ? "" : u.getPath();
-        if (h.endsWith("doubleclick.net") || h.endsWith("googlesyndication.com")
-                || h.endsWith("googleadservices.com") || h.endsWith("google-analytics.com")
-                || h.endsWith("googletagmanager.com") || h.endsWith("2mdn.net")
-                || h.equals("imasdk.googleapis.com")) return true;
-        if (h.endsWith("youtube.com")) {
-            return p.startsWith("/pagead/") || p.startsWith("/api/stats/ads") || p.startsWith("/ptracking")
-                    || p.startsWith("/get_midroll_info") || p.startsWith("/youtubei/v1/player/ad_break");
-        }
-        return false;
-    }
-
     private class Client extends WebViewClient {
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest req) {
@@ -220,12 +243,6 @@ public class MainActivity extends Activity {
             if (host.equals("consent.youtube.com") || host.equals("consent.google.com")) return false;
             openExternal(u); // външни линкове – в браузъра
             return true;
-        }
-
-        @Override
-        public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest req) {
-            if (isAdRequest(req.getUrl())) return blocked();
-            return null;
         }
 
         @Override

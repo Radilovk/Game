@@ -43,7 +43,13 @@
     if (!S.enabled) return '';
     const r = ['[data-ytc-hidden]{display:none!important}'];
     if (S.blockShorts) r.push('html.ytc-shorts-page body{visibility:hidden!important}', 'ytm-shorts-player, ytm-reel-watch-player, ytm-reel-player-overlay-renderer, shorts-video{display:none!important}');
-    for (const k in CSS) if (S[k]) for (const sel of CSS[k]) r.push(sel + '{display:none!important}');
+    // Когато слоят "данни" работи, рекламите и Shorts изобщо не стигат до страницата.
+    // Тогава пропускаме скъпите :has() селектори – те карат браузъра да преизчислява стиловете при всяка промяна.
+    const hookOn = document.documentElement && document.documentElement.getAttribute('data-ytc-hook') === 'on';
+    for (const k in CSS) if (S[k]) for (const sel of CSS[k]) { if (hookOn && sel.includes(':has(')) continue; r.push(sel + '{display:none!important}'); }
+    if (S.skipVideoAds) r.push('.ytc-ad-skip video{opacity:0!important}',
+      '.ytc-ad-skip::after{content:"Пропускане на реклама…";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;' +
+      'background:#000;color:#aaa;font:14px sans-serif;z-index:60;pointer-events:none}');
     if (S.hideHomeFeed) for (const sel of HOME_CSS) r.push('html.ytc-home ' + sel + '{display:none!important}');
     return r.join('\n'); // всяко правило отделно – непознат селектор не чупи останалите
   }
@@ -129,10 +135,11 @@
     document.documentElement.classList.toggle('ytc-shorts-page', !!S.blockShorts && /^\/shorts(\/|$)/.test(location.pathname));
     if (location.href !== lastHref) { lastHref = location.href; if (checkUrl()) return; }
     document.documentElement.classList.toggle('ytc-home', location.pathname === '/');
-    domFilter();
+    // резервното филтриране по DOM е нужно само ако слоят "данни" не е активен
+    if (document.documentElement.getAttribute('data-ytc-hook') !== 'on') domFilter();
     if (YTC.onPass) YTC.onPass();
   }
-  function schedule() { if (!scheduled) { scheduled = true; setTimeout(pass, 150); } }
+  function schedule() { if (!scheduled) { scheduled = true; setTimeout(pass, 250); } }
 
   // ---------- Видео реклами (резервно) ----------
   function adTick() {
@@ -140,13 +147,14 @@
     const p = document.querySelector('.html5-video-player.ad-showing, .html5-video-player.ad-interrupting');
     const v = p && p.querySelector('video');
     if (p && v) {
-      if (!ad.active) { ad.active = true; ad.muted = v.muted; YTC.domStats.ads++; }
+      if (!ad.active) { ad.active = true; ad.muted = v.muted; YTC.domStats.ads++; p.classList.add('ytc-ad-skip'); }
       v.muted = true;
       try { if (v.playbackRate < 16) v.playbackRate = 16; } catch (e) { /* */ }
       if (isFinite(v.duration) && v.duration > 0 && v.currentTime < v.duration - 0.3) { try { v.currentTime = v.duration - 0.1; } catch (e) { /* */ } }
       p.querySelectorAll(SKIP_SEL).forEach((b) => { try { b.click(); } catch (e) { /* */ } });
     } else if (ad.active) {
       ad.active = false;
+      document.querySelectorAll('.ytc-ad-skip').forEach((e) => e.classList.remove('ytc-ad-skip'));
       const mv = document.querySelector('.html5-video-player video');
       if (mv) { mv.muted = ad.muted; if (mv.playbackRate >= 16) mv.playbackRate = 1; }
     }
@@ -165,7 +173,7 @@
     document.addEventListener('click', onClick, true);
     ['state-navigateend', 'yt-navigate-finish', 'popstate'].forEach((ev) => window.addEventListener(ev, schedule, true));
     new MutationObserver(schedule).observe(document, { childList: true, subtree: true });
-    setInterval(adTick, 250);
+    setInterval(adTick, 150);
     setInterval(() => { if (location.href !== lastHref) pass(); }, 250);
     schedule();
   };
