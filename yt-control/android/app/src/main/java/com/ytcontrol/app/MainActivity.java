@@ -53,7 +53,29 @@ public class MainActivity extends Activity {
     private static final String UPDATE_URL = "https://radilovk.github.io/Game/yt-control/dist/yt-control.user.js";
 
     private FrameLayout root;
-    private WebView web;
+    private BgWebView web;
+
+    /**
+     * WebView, който може да "остане видим" за Chromium, докато свири звук.
+     * Иначе двигателят сам спира видеото, щом приложението отиде във фонов режим
+     * или екранът се заключи (така работи Chrome за Android по подразбиране).
+     */
+    static class BgWebView extends WebView {
+        boolean keepVisible = false;
+        BgWebView(android.content.Context c) { super(c); }
+
+        @Override
+        protected void onWindowVisibilityChanged(int visibility) {
+            super.onWindowVisibilityChanged(keepVisible ? View.VISIBLE : visibility);
+        }
+
+        void setKeepVisible(boolean on) {
+            if (keepVisible == on) return;
+            keepVisible = on;
+            // прилагаме веднага истинското (или "видимото") състояние
+            super.onWindowVisibilityChanged(on ? View.VISIBLE : getWindowVisibility());
+        }
+    }
     private View customView;
     private WebChromeClient.CustomViewCallback customCallback;
     private boolean docStartInjected = false;
@@ -67,7 +89,7 @@ public class MainActivity extends Activity {
 
         root = new FrameLayout(this);
         root.setBackgroundColor(Color.parseColor("#0F0F0F"));
-        web = new WebView(this);
+        web = new BgWebView(this);
         root.addView(web, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(root);
 
@@ -96,8 +118,16 @@ public class MainActivity extends Activity {
         }
 
         web.addJavascriptInterface(new Bridge(), "YTCApp");
-        PlaybackService.controller = (cmd) -> ui.post(() ->
-                web.evaluateJavascript("window.YTC && YTC.mediaCommand && YTC.mediaCommand('" + cmd.replaceAll("[^a-z]", "") + "')", null));
+        PlaybackService.controller = (cmd) -> ui.post(() -> {
+            if ("released".equals(cmd)) {       // известието е затворено / дълга пауза
+                web.setKeepVisible(false);
+                if (!hasWindowFocus()) web.onPause();
+                return;
+            }
+            web.setKeepVisible(true);
+            web.onResume();
+            web.evaluateJavascript("window.YTC && YTC.mediaCommand && YTC.mediaCommand('" + cmd.replaceAll("[^a-z]", "") + "')", null);
+        });
         web.setWebViewClient(new Client());
         web.setWebChromeClient(new Chrome());
 
@@ -140,7 +170,7 @@ public class MainActivity extends Activity {
         public void media(boolean isPlaying, String title, String artist) {
             onYouTube(() -> {
                 playing = isPlaying;
-                if (isPlaying) askNotificationPermission();
+                if (isPlaying) { askNotificationPermission(); web.setKeepVisible(true); }
                 if (isPlaying || serviceStarted) {
                     serviceStarted = true;
                     PlaybackService.update(MainActivity.this, isPlaying, title, artist);
@@ -234,7 +264,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onPause() {
-        if (!playing) web.onPause();   // докато свири – продължава във фонов режим
+        if (!web.keepVisible) web.onPause();   // докато има активно слушане – продължава във фонов режим
         CookieManager.getInstance().flush();
         super.onPause();
     }

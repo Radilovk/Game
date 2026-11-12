@@ -52,7 +52,10 @@
   .disabled .card{opacity:.5}
   .toast{position:fixed;left:50%;top:calc(64px + env(safe-area-inset-top));transform:translate(-50%,-20px);opacity:0;
     background:rgba(28,28,30,.96);color:#fff;padding:10px 16px;border-radius:20px;font:600 14px -apple-system,Roboto,sans-serif;
-    box-shadow:0 4px 16px rgba(0,0,0,.4);transition:all .25s;z-index:2147483647;pointer-events:none;white-space:nowrap}
+    box-shadow:0 4px 16px rgba(0,0,0,.4);transition:all .25s;z-index:2147483647;pointer-events:none;white-space:nowrap;
+    display:flex;align-items:center;gap:12px;max-width:92vw}
+  .toast.act{pointer-events:auto}
+  .toast button{border:0;background:none;color:#0a84ff;font:700 14px inherit;padding:2px 0}
   .toast.on{opacity:1;transform:translate(-50%,0)}
   `;
 
@@ -245,14 +248,21 @@
     YTC.openPanel = open;
 
     let toastEl, toastTimer;
-    YTC.toast = function (msg) {
+    YTC.toast = function (msg, action, fn) {
       mount();
       if (!root) return;
       if (!toastEl) { toastEl = el('div', 'toast'); root.appendChild(toastEl); }
-      toastEl.textContent = '🚫 ' + msg;
+      while (toastEl.firstChild) toastEl.removeChild(toastEl.firstChild);
+      toastEl.appendChild(el('span', null, /^[\u{1F300}-\u{1FAFF}\u2600-\u27BF▶⏭⏾✓]/u.test(msg) ? msg : '🚫 ' + msg));
+      toastEl.classList.toggle('act', !!action);
+      if (action) {
+        const b = el('button', null, action);
+        b.addEventListener('click', () => { toastEl.classList.remove('on'); try { fn(); } catch (e) { /* */ } });
+        toastEl.appendChild(b);
+      }
       requestAnimationFrame(() => toastEl.classList.add('on'));
       clearTimeout(toastTimer);
-      toastTimer = setTimeout(() => toastEl.classList.remove('on'), 1800);
+      toastTimer = setTimeout(() => toastEl.classList.remove('on'), action ? 4500 : 2200);
     };
     const pendingToast = () => {
       try { if (sessionStorage.getItem('ytc-toast')) { sessionStorage.removeItem('ytc-toast'); setTimeout(() => YTC.toast('Shorts е блокиран'), 600); } } catch (e) { /* */ }

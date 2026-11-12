@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const YTC = (globalThis.YTC = globalThis.YTC || {});
-  YTC.VERSION = '3.0.0';
+  YTC.VERSION = '3.1.0';
   YTC.KEY = 'ytc-settings';
 
   YTC.SCHEMA = [
@@ -13,6 +13,10 @@
     { key: 'smartHome', label: 'Предложения при отваряне', hint: 'По това, което гледаш, и по твоите интереси', def: true },
 
     { group: 'Гледане' },
+    { key: 'resumePlayback', label: 'Продължавай оттам, докъдето си стигнал', hint: 'Видеото тръгва от мястото, където си спрял', def: true },
+    { key: 'saveHistory', label: 'Пази история на гледане', hint: 'Само на това устройство. Виж „История“ на началната страница', def: true },
+    { key: 'toolsButton', label: 'Бутон „Инструменти“ при гледане', hint: 'Скорост, таймер за сън, повторение', def: true },
+    { key: 'sponsorBlock', label: 'Прескачай спонсорските части в клиповете', hint: 'Данни от общността SponsorBlock. Изпраща се само част от хеша на видеото', def: true },
     { key: 'backgroundPlay', label: 'Слушане във фонов режим', hint: 'Продължава при заключен екран и в други приложения', def: true },
     { key: 'showDates', label: 'Дата на качване навсякъде', hint: 'Добавя датата и в препоръките под видеото', def: true },
     { key: 'captionsButton', label: 'Бутон за изтегляне на надписи', hint: 'Бутон „CC“ при гледане на видео', def: true },

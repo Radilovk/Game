@@ -56,6 +56,12 @@
   const lastUrl = (arr) => (Array.isArray(arr) && arr.length ? arr[arr.length - 1].url : '') || '';
   const isDateText = (t) => /(преди|ago|^\d{1,2}\s\w+\.?\s\d{4}|стрийм|streamed|излъчено)/i.test(t || '');
 
+  function viewsPart(parts) {
+    const w = parts.find((p) => /показв|views|гледа/i.test(p));
+    if (w) return w;
+    const n = parts.find((p) => !isDateText(p) && /^[\d\s.,\u00a0]+(млрд|млн|хил|[KMB])?\.?$/i.test(p.trim()));
+    return n ? n.trim() + ' показвания' : '';
+  }
   function fromLockup(v) {
     if (!v || v.contentType !== 'LOCKUP_CONTENT_TYPE_VIDEO' || !v.contentId) return null;
     const md = (v.metadata && v.metadata.lockupMetadataViewModel) || {};
@@ -72,7 +78,7 @@
     if (/SHORTS/i.test(JSON.stringify(ti.overlays || []).slice(0, 2000)) && !dur) return null;
     return {
       id: v.contentId, title: txt(md.title), channel: parts[0] || '', handle: '',
-      views: parts.find((p) => /показв|views|гледа/i.test(p)) || '', date: parts.find(isDateText) || '',
+      views: viewsPart(parts), date: parts.find(isDateText) || '',
       dur, live, thumb: lastUrl(ti.image && ti.image.sources),
     };
   }
@@ -132,21 +138,41 @@
     return true;
   }
 
-  // ======================================================== История на гледане
-  let lastRecorded = '';
-  function recordHistory() {
-    const m = location.pathname === '/watch' && location.search.match(/[?&]v=([\w-]{6,})/);
-    if (!m || m[1] === lastRecorded) return;
-    const id = m[1];
-    setTimeout(() => {
-      if (!location.search.includes(id)) return;
-      lastRecorded = id;
-      const title = document.title.replace(/\s*-\s*YouTube\s*$/, '');
-      const h = LS.get(H_KEY, []).filter((x) => x.id !== id);
-      h.unshift({ id, title, t: Date.now() });
-      LS.set(H_KEY, h.slice(0, 80));
-      LS.set(F_KEY, null); // предложенията ще се обновят с новото гледане
-    }, 8000);
+  // ======================================================== Подредба и период
+  // Параметри на търсенето на YouTube (protobuf → base64): подредба + период + само видеа
+  const SORTS = [['rec', 'Препоръчани'], ['new', 'Най-нови'], ['views', 'Най-гледани'], ['rating', 'Най-висок рейтинг']];
+  const PERIODS = [['any', 'Всякога'], ['day', 'Днес'], ['week', 'Тази седмица'], ['month', 'Този месец'], ['year', 'Тази година']];
+  const SORT_CODE = { rec: 0, rating: 1, new: 2, views: 3 };
+  const PERIOD_CODE = { any: 0, day: 2, week: 3, month: 4, year: 5 };
+  const PERIOD_SEC = { day: 86400, week: 7 * 86400, month: 31 * 86400, year: 366 * 86400 };
+  function sp(sort, period) {
+    const f = [];
+    if (PERIOD_CODE[period]) f.push(0x08, PERIOD_CODE[period]);
+    f.push(0x10, 0x01); // само видеа
+    const b = [];
+    if (SORT_CODE[sort]) b.push(0x08, SORT_CODE[sort]);
+    b.push(0x12, f.length, ...f);
+    return btoa(String.fromCharCode(...b));
+  }
+  let view = LS.get('ytc-feed-view', { sort: 'rec', period: 'any' });
+  // "преди 7 м." (месеца), "2 седм.", "6 ч", "3 дни", "1 г.", "5 hours ago"…
+  const UNITS = [['сек', 1], ['мин', 60], ['седм', 604800], ['ч', 3600], ['ден', 86400], ['дн', 86400], ['д', 86400],
+    ['мес', 2592000], ['м', 2592000], ['год', 31536000], ['г', 31536000],
+    ['second', 1], ['minute', 60], ['hour', 3600], ['day', 86400], ['week', 604800], ['month', 2592000], ['year', 31536000]];
+  function ageSec(d) {
+    if (!d) return null;
+    const m = String(d).toLowerCase().match(/(\d+)\s*([^\s\d]+)/);
+    if (!m) return null;
+    for (const [u, mul] of UNITS) if (m[2].startsWith(u)) return +m[1] * mul;
+    return null;
+  }
+  function viewsNum(v) {
+    if (!v) return 0;
+    const m = v.replace(/\s/g, '').match(/([\d.,]+)\s*(млрд|млн|хил|B|M|K)?/i);
+    if (!m) return 0;
+    const n = parseFloat(m[1].replace(/\.(?=\d{3}\b)/g, '').replace(',', '.'));
+    const mul = { млрд: 1e9, b: 1e9, млн: 1e6, m: 1e6, хил: 1e3, k: 1e3 }[(m[2] || '').toLowerCase()] || 1;
+    return n * mul;
   }
 
   // ======================================================== Начална страница с предложения
@@ -159,12 +185,30 @@
     font:14px/1.35 Roboto,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;z-index:3}
   .dark{background:#0f0f0f;color:#f1f1f1}.light{background:#fff;color:#0f0f0f}
   .chips{display:flex;gap:8px;overflow-x:auto;padding:10px 12px;position:sticky;top:0;z-index:2;scrollbar-width:none}
-  .dark .chips{background:#0f0f0f}.light .chips{background:#fff}
+  .dark .chips,.dark .head{background:#0f0f0f}.light .chips,.light .head{background:#fff}
   .chips::-webkit-scrollbar{display:none}
   .chip{flex:0 0 auto;border:0;border-radius:8px;padding:7px 12px;font:500 14px inherit;white-space:nowrap}
   .dark .chip{background:#272727;color:#f1f1f1}.light .chip{background:#f2f2f2;color:#0f0f0f}
   .dark .chip.on{background:#f1f1f1;color:#0f0f0f}.light .chip.on{background:#0f0f0f;color:#fff}
-  .card{display:block;text-decoration:none;color:inherit;margin-bottom:16px}
+  .card{display:block;text-decoration:none;color:inherit;margin-bottom:16px;position:relative}
+  .sorts{display:flex;gap:8px;overflow-x:auto;padding:0 12px 10px;scrollbar-width:none;align-items:center}
+  .sorts::-webkit-scrollbar{display:none}
+  .sorts .chip{padding:5px 10px;font-size:13px}
+  .sel{flex:0 0 auto;border:0;border-radius:8px;padding:5px 8px;font:500 13px inherit}
+  .dark .sel{background:#272727;color:#f1f1f1}.light .sel{background:#f2f2f2;color:#0f0f0f}
+  .prog{position:absolute;left:0;bottom:0;height:3px;background:#ff0033}
+  .progbg{position:absolute;left:0;right:0;bottom:0;height:3px;background:rgba(255,255,255,.35)}
+  .cont{padding:4px 0 14px}
+  .cont h4{margin:0 12px 8px;font-size:16px}
+  .hs{display:flex;gap:10px;overflow-x:auto;padding:0 12px;scrollbar-width:none}
+  .hs::-webkit-scrollbar{display:none}
+  .hs .card{flex:0 0 62%;margin:0}
+  .hs .th{border-radius:10px}
+  .hs .meta{padding:6px 2px 0}.hs .tt{font-size:13.5px}
+  .hhead{display:flex;justify-content:space-between;align-items:center;padding:4px 12px 12px}
+  .hhead h4{margin:0;font-size:16px}
+  .lnk{border:0;background:none;color:#3ea6ff;font:500 14px inherit;padding:4px 0}
+  .x{position:absolute;top:8px;right:8px;width:28px;height:28px;border-radius:50%;border:0;background:rgba(0,0,0,.6);color:#fff;font-size:15px;line-height:28px;padding:0}
   .th{position:relative;aspect-ratio:16/9;background:#222;overflow:hidden}
   .th img{width:100%;height:100%;object-fit:cover;display:block}
   .dur{position:absolute;right:8px;bottom:8px;background:rgba(0,0,0,.8);color:#fff;font:500 12px inherit;padding:1px 5px;border-radius:4px}
@@ -225,8 +269,13 @@
     feedRoot.appendChild(el('style', null, FEED_CSS));
     const wrap = el('div', 'wrap');
     const chips = el('div', 'chips');
+    const sorts = el('div', 'sorts');
     feedList = el('div', 'list');
-    wrap.appendChild(chips); wrap.appendChild(feedList);
+    const head = el('div', 'head');
+    head.style.cssText = 'position:sticky;top:0;z-index:2';
+    chips.style.position = 'static';
+    head.appendChild(chips); head.appendChild(sorts);
+    wrap.appendChild(head); wrap.appendChild(feedList);
     feedRoot.appendChild(wrap);
     document.body.appendChild(feedHost);
     document.documentElement.classList.add('ytc-feed-on');
@@ -251,13 +300,74 @@
       const c = el('button', 'chip' + (activeChip === id ? ' on' : ''), label);
       c.addEventListener('click', () => {
         if (id === 'edit') { showPicker(); return; }
-        activeChip = id; renderChips(); startFeed(true);
+        activeChip = id; renderChips();
+        if (id === 'hist') showHistory(); else startFeed(true);
       });
       chips.appendChild(c);
     };
     add('all', 'За теб');
+    add('hist', '🕘 История');
     ints.forEach((i) => add('i:' + i, i));
     add('edit', ints.length ? '✎ Интереси' : '＋ Избери интереси');
+    renderSorts();
+  }
+
+  function renderSorts() {
+    const row = feedRoot.querySelector('.sorts');
+    while (row.firstChild) row.removeChild(row.firstChild);
+    if (activeChip === 'hist') { row.style.display = 'none'; return; }
+    row.style.display = '';
+    for (const [k, l] of SORTS) {
+      const c = el('button', 'chip' + (view.sort === k ? ' on' : ''), l);
+      c.addEventListener('click', () => { view.sort = k; LS.set('ytc-feed-view', view); renderSorts(); startFeed(true); });
+      row.appendChild(c);
+    }
+    const sel = el('select', 'sel');
+    for (const [k, l] of PERIODS) { const o = el('option', null, '⏱ ' + l); o.value = k; if (view.period === k) o.selected = true; sel.appendChild(o); }
+    sel.addEventListener('change', () => { view.period = sel.value; LS.set('ytc-feed-view', view); startFeed(true); });
+    row.appendChild(sel);
+  }
+
+  // ---------- История с прогрес ----------
+  function showHistory() {
+    while (feedList.firstChild) feedList.removeChild(feedList.firstChild);
+    const h = (YTC.history ? YTC.history.all() : []);
+    if (!h.length) { feedList.appendChild(msg('Историята е празна', 'Видеата, които гледаш, ще се появяват тук – и ще продължават оттам, докъдето си стигнал.')); return; }
+    const head = el('div', 'hhead');
+    head.appendChild(el('h4', null, h.length + ' ' + (h.length === 1 ? 'видео' : 'видеа')));
+    const clr = el('button', 'lnk', 'Изчисти историята');
+    clr.addEventListener('click', () => { if (confirm('Да се изчисти ли цялата история на гледане?')) { YTC.history.clear(); showHistory(); } });
+    head.appendChild(clr);
+    feedList.appendChild(head);
+    for (const x of h) {
+      const c = card({ id: x.id, title: x.title, channel: x.channel, dur: x.len ? fmtDur(x.len) : '', views: '',
+        date: (x.done ? 'гледано' : x.pos ? 'спряно на ' + fmtDur(x.pos) : '') + ' • ' + ago(x.t) });
+      const del = el('button', 'x', '✕');
+      del.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); YTC.history.remove(x.id); c.remove(); });
+      c.appendChild(del);
+      feedList.appendChild(c);
+    }
+  }
+  function fmtDur(sec) {
+    sec = Math.round(sec);
+    const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s2 = sec % 60;
+    return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(s2).padStart(2, '0');
+  }
+  function ago(t) {
+    const d = (Date.now() - t) / 1000;
+    if (d < 3600) return 'преди ' + Math.max(1, Math.round(d / 60)) + ' мин';
+    if (d < 86400) return 'преди ' + Math.round(d / 3600) + ' ч';
+    return 'преди ' + Math.round(d / 86400) + ' дни';
+  }
+  function continueRow() {
+    const h = (YTC.history ? YTC.history.all() : []).filter((x) => !x.done && x.pos > 30 && x.len && Date.now() - x.t < 14 * 86400e3).slice(0, 10);
+    if (!h.length) return null;
+    const box = el('div', 'cont');
+    box.appendChild(el('h4', null, 'Продължи гледането'));
+    const hs = el('div', 'hs');
+    for (const x of h) hs.appendChild(card({ id: x.id, title: x.title, channel: x.channel, dur: fmtDur(x.len - x.pos) + ' ост.', views: '', date: '' }));
+    box.appendChild(hs);
+    return box;
   }
 
   function showPicker() {
@@ -302,6 +412,12 @@
     th.appendChild(img);
     if (it.live) th.appendChild(el('span', 'dur live', 'НА ЖИВО'));
     else if (it.dur) th.appendChild(el('span', 'dur', it.dur));
+    const hh = YTC.history && YTC.history.get(it.id);
+    if (hh && hh.len && (hh.pos || hh.done)) {
+      th.appendChild(el('div', 'progbg'));
+      const p = el('div', 'prog'); p.style.width = (hh.done ? 100 : Math.min(100, Math.round(hh.pos / hh.len * 100))) + '%';
+      th.appendChild(p);
+    }
     a.appendChild(th);
     const meta = el('div', 'meta');
     meta.appendChild(el('div', 'tt', it.title));
@@ -320,20 +436,31 @@
     const hist = LS.get(H_KEY, []);
     const ints = LS.get(I_KEY, []);
     const jobs = [];
+    const sort = view.sort, period = view.period;
+    // при "Препоръчани" без период – свежо съдържание от последния месец; иначе – точно избраното
+    const prm = sort === 'rec' && period === 'any' ? sp('rec', first ? 'month' : 'any') : sp(sort, period);
+    // теми за търсене: интересите + най-гледаните канали от историята
+    const chanCount = {};
+    hist.slice(0, 60).forEach((h) => { if (h.channel) chanCount[h.channel] = (chanCount[h.channel] || 0) + 1; });
+    const topChannels = Object.keys(chanCount).sort((x, y) => chanCount[y] - chanCount[x]).slice(0, 3);
     if (activeChip.startsWith('i:')) {
       const q = activeChip.slice(2);
-      jobs.push(api('search', { query: q, params: first ? 'EgQIBBAB' : 'EgIQAQ%3D%3D' }, 'MWEB')); // този месец / всички
-      if (!first) jobs.push(api('search', { query: q + ' ' + new Date().getFullYear(), params: 'EgIQAQ%3D%3D' }, 'MWEB'));
+      const page = feedState.page = (feedState.page || 0) + 1;
+      jobs.push(api('search', { query: page > 1 ? q + ' ' + ['', 'нови', 'най-добрите', new Date().getFullYear()][page % 4] : q, params: prm }, 'MWEB'));
     } else {
-      let seeds;
-      if (first) seeds = hist.slice(0, 2).map((h) => h.id).concat(shuffle(hist.slice(2, 15).map((h) => h.id)).slice(0, 2));
-      else seeds = feedState.seeds.splice(0, 3);
+      let seeds = [];
+      if (sort === 'rec' || sort === 'new' || sort === 'views') {
+        if (first) seeds = hist.slice(0, 2).map((h) => h.id).concat(shuffle(hist.slice(2, 15).map((h) => h.id)).slice(0, 2));
+        else seeds = feedState.seeds.splice(0, 3);
+      }
       for (const id of seeds) jobs.push(api('next', { videoId: id }, 'WEB'));
-      for (const q of shuffle(ints.slice()).slice(0, first ? 2 : 1)) jobs.push(api('search', { query: q, params: 'EgQIBBAB' }, 'MWEB'));
+      const qs = shuffle(ints.slice()).slice(0, first ? 2 : 1);
+      if (sort !== 'rec' || !qs.length) qs.push(...shuffle(topChannels.slice()).slice(0, first ? 2 : 1));
+      for (const q of qs) jobs.push(api('search', { query: q, params: prm }, 'MWEB'));
       if (!jobs.length) return null; // няма история и интереси
     }
     const res = await Promise.all(jobs);
-    const lists = res.filter(Boolean).map((r) => shuffle(collect(r).slice(0, 25)));
+    const lists = res.filter(Boolean).map((r) => { const l = collect(r).slice(0, 25); return sort === 'rec' ? shuffle(l) : l; });
     const watched = new Set(hist.map((h) => h.id));
     const out = [];
     for (let i = 0; lists.some((l) => i < l.length); i++) {       // редуване: по малко от всеки източник
@@ -348,15 +475,22 @@
     }
     // следващите "семена" за безкрайно превъртане – от самите предложения
     feedState.seeds.push(...shuffle(out.slice(0, 12).map((x) => x.id)));
-    return out;
+    // период и подредба важат и за свързаните видеа (по датата/показванията им)
+    let res2 = out;
+    if (period !== 'any') res2 = res2.filter((x) => { const a = ageSec(x.date); return a == null || a <= PERIOD_SEC[period]; });
+    if (sort === 'new') res2.sort((x, y) => (ageSec(x.date) ?? 9e12) - (ageSec(y.date) ?? 9e12));
+    else if (sort === 'views') res2.sort((x, y) => viewsNum(y.views) - viewsNum(x.views));
+    return res2;
   }
 
   async function startFeed(force) {
     if (!feedList) return;
     feedState = { items: [], seen: new Set(), seeds: [], loading: false, done: false };
     while (feedList.firstChild) feedList.removeChild(feedList.firstChild);
-    const cached = activeChip === 'all' && LS.get(F_KEY, null);
+    const plain = activeChip === 'all' && view.sort === 'rec' && view.period === 'any';
+    const cached = plain && LS.get(F_KEY, null);
     if (!force && cached && cached.items && Date.now() - cached.t < 6 * 3600e3) {
+      { const c = continueRow(); if (c) feedList.appendChild(c); }
       for (const it of cached.items) { feedState.seen.add(it.id); feedList.appendChild(card(it)); }
       feedState.seeds = cached.seeds || [];
       feedState.items = cached.items;
@@ -370,14 +504,15 @@
     if (!cached || force || !cached.items) { clearSkeleton(); while (feedList.firstChild) feedList.removeChild(feedList.firstChild); }
     else { while (feedList.firstChild) feedList.removeChild(feedList.firstChild); } // свежите заместват кешираните
     if (!items.length) { feedList.appendChild(msg('Няма нови предложения', 'Опитай „Избери интереси“ или потърси нещо.')); return; }
+    if (activeChip === 'all') { const c = continueRow(); if (c) feedList.appendChild(c); }
     items.forEach((it) => feedList.appendChild(card(it)));
     feedState.items = items;
-    if (activeChip === 'all') LS.set(F_KEY, { t: Date.now(), items: items.slice(0, 40), seeds: feedState.seeds.slice(0, 20) });
+    if (plain) LS.set(F_KEY, { t: Date.now(), items: items.slice(0, 40), seeds: feedState.seeds.slice(0, 20) });
   }
   function msg(h, p) { const b = el('div', 'msg'); b.appendChild(el('h2', null, h)); b.appendChild(el('p', null, p)); return b; }
 
   async function loadMore() {
-    if (!feedList || feedState.loading || feedState.done) return;
+    if (!feedList || feedState.loading || feedState.done || activeChip === 'hist') return;
     if (!feedState.seeds.length && !activeChip.startsWith('i:') && !LS.get(I_KEY, []).length) { feedState.done = true; return; }
     feedState.loading = true;
     const m = el('div', 'more', 'Зареждане…'); feedList.appendChild(m);
@@ -647,7 +782,6 @@
       lastPath = location.pathname;
       if (feedHost) placeFeed();
     }
-    recordHistory();
     if (S.enabled && S.showDates) {
       const v = location.pathname === '/watch' && curVideo();
       if (v && !S.hideRelated && !askedDates.has(v) && !pendingDates.has(v) && document.querySelector(ITEM_SEL)) {
