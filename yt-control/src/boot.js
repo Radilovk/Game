@@ -59,9 +59,11 @@
   // ---- 2) Слой "DOM" + интерфейс ----
   let S = YTC.load();
   YTC.domStart(S);
-  YTC.uiStart(() => S, (ns) => {
+  const setS = (ns) => {
     S = YTC.normalize(ns);
     YTC.save(S);
     YTC.domApply(S);
-  });
+  };
+  YTC.saveSettings = setS;
+  YTC.uiStart(() => S, setS);
 })();

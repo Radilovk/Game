@@ -55,7 +55,14 @@
   }
   function applyCSS() {
     if (!styleEl) { styleEl = document.createElement('style'); styleEl.id = 'ytc-style'; }
-    const css = buildCSS();
+    // "картина в картината" (Android): в малкия прозорец – само видеото, на целия прозорец
+    const PIP = 'html.ytc-pip, html.ytc-pip body{overflow:hidden!important;background:#000!important}' +
+      'html.ytc-pip .html5-video-player, html.ytc-pip #player-container-id, html.ytc-pip .player-container{position:fixed!important;inset:0!important;' +
+      'width:100vw!important;height:100vh!important;max-height:none!important;z-index:2147483647!important;background:#000!important;transform:none!important}' +
+      'html.ytc-pip .html5-video-player video{position:absolute!important;left:0!important;top:0!important;width:100%!important;height:100%!important;object-fit:contain!important}' +
+      'html.ytc-pip .ytp-chrome-bottom, html.ytc-pip .ytm-autonav-bar, html.ytc-pip .player-controls-content, html.ytc-pip #ytc-app, html.ytc-pip #ytc-tools,' +
+      ' html.ytc-pip #ytc-cc, html.ytc-pip #ytc-home, html.ytc-pip ytm-mobile-topbar-renderer, html.ytc-pip ytm-pivot-bar-renderer{display:none!important}';
+    const css = buildCSS() + '\n' + PIP;
     if (styleEl.textContent !== css) styleEl.textContent = css;
     const parent = document.head || document.documentElement;
     if (parent && styleEl.parentNode !== parent) parent.appendChild(styleEl);
@@ -157,13 +164,14 @@
       ad.active = false;
       document.querySelectorAll('.ytc-ad-skip').forEach((e) => e.classList.remove('ytc-ad-skip'));
       const mv = document.querySelector('.html5-video-player video');
-      if (mv) { mv.muted = ad.muted; if (mv.playbackRate >= 16) mv.playbackRate = 1; }
+      if (mv) { mv.muted = ad.muted; if (mv.playbackRate >= 16) mv.playbackRate = YTC.desiredSpeed ? YTC.desiredSpeed() : 1; }
     }
   }
 
   YTC.domApply = function (ns) {
     S = ns;
     if (YTC.featuresApply) YTC.featuresApply(ns);
+    if (YTC.toolsApply) YTC.toolsApply(ns);
     document.querySelectorAll('[data-ytc-hidden]').forEach((e) => e.removeAttribute('data-ytc-hidden'));
     lastHref = '';
     if (!S.enabled && document.documentElement) document.documentElement.classList.remove('ytc-home');
@@ -173,6 +181,7 @@
   YTC.domStart = function (initial) {
     S = initial;
     if (YTC.featuresApply) YTC.featuresApply(initial);
+    if (YTC.toolsApply) YTC.toolsApply(initial);
     document.addEventListener('click', onClick, true);
     ['state-navigateend', 'yt-navigate-finish', 'popstate'].forEach((ev) => window.addEventListener(ev, schedule, true));
     new MutationObserver(schedule).observe(document, { childList: true, subtree: true });

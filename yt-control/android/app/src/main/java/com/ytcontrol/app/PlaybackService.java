@@ -42,7 +42,7 @@ public class PlaybackService extends Service {
     private boolean playing;
     private String title = "", artist = "";
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private final Runnable idleStop = () -> { stopForeground(STOP_FOREGROUND_DETACH); releaseLocks(); };
+    private final Runnable idleStop = () -> { stopForeground(STOP_FOREGROUND_DETACH); releaseLocks(); send("released"); };
 
     static void update(Context ctx, boolean playing, String title, String artist) {
         Intent i = new Intent(ctx, PlaybackService.class).setAction(ACTION_UPDATE)
@@ -90,7 +90,7 @@ public class PlaybackService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         String a = intent == null ? null : intent.getAction();
         if (ACTION_TOGGLE.equals(a)) { send(playing ? "pause" : "play"); return START_NOT_STICKY; }
-        if (ACTION_CLOSE.equals(a)) { send("pause"); stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(); return START_NOT_STICKY; }
+        if (ACTION_CLOSE.equals(a)) { send("pause"); send("released"); stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(); return START_NOT_STICKY; }
         if (ACTION_UPDATE.equals(a)) {
             playing = intent.getBooleanExtra("playing", false);
             String t = intent.getStringExtra("title"), ar = intent.getStringExtra("artist");

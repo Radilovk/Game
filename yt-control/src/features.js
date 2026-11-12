@@ -18,7 +18,11 @@
   const INTERESTS = ['Музика', 'Наука', 'Технологии', 'Игри', 'Футбол', 'Спорт', 'Готвене', 'Пътувания', 'Новини', 'Филми',
     'Комедия', 'Образование', 'История', 'Природа', 'Животни', 'Коли', 'Фитнес', 'Подкасти', 'Направи си сам', 'Финанси'];
   let S = {};
-  YTC.featuresApply = (s) => { S = s; refresh(); };
+  YTC.featuresApply = (s) => {
+    S = s;
+    try { if (window.YTCApp && typeof window.YTCApp.setPip === 'function') window.YTCApp.setPip(!!(s.enabled && s.pip !== false)); } catch (e) { /* */ }
+    refresh();
+  };
 
   // ======================================================== InnerTube (API-то, което ползва и сайтът)
   const cfgCache = {};
@@ -56,6 +60,20 @@
   const lastUrl = (arr) => (Array.isArray(arr) && arr.length ? arr[arr.length - 1].url : '') || '';
   const isDateText = (t) => /(преди|ago|^\d{1,2}\s\w+\.?\s\d{4}|стрийм|streamed|излъчено)/i.test(t || '');
 
+  const isMetaPart = (p) => isDateText(p) || /показв|views|гледа|^на живо$|^live$/i.test(p) || /^[\d\s.,\u00a0]+(млрд|млн|хил|[KMB])?\.?$/i.test(p.trim());
+  function viewsPart(parts) {
+    const w = parts.find((p) => /показв|views|гледа/i.test(p));
+    if (w) return w;
+    const n = parts.find((p) => !isDateText(p) && /^[\d\s.,\u00a0]+(млрд|млн|хил|[KMB])?\.?$/i.test(p.trim()));
+    return n ? n.trim() + ' показвания' : '';
+  }
+  // първият browseId на канал (UC…) в даден обект – за "Следвай канала"
+  function findChannelId(o, d) {
+    if (!o || typeof o !== 'object' || (d || 0) > 12) return '';
+    if (o.browseEndpoint && /^UC[\w-]{20,}$/.test(o.browseEndpoint.browseId || '')) return o.browseEndpoint.browseId;
+    for (const k in o) { const r = findChannelId(o[k], (d || 0) + 1); if (r) return r; }
+    return '';
+  }
   function fromLockup(v) {
     if (!v || v.contentType !== 'LOCKUP_CONTENT_TYPE_VIDEO' || !v.contentId) return null;
     const md = (v.metadata && v.metadata.lockupMetadataViewModel) || {};
@@ -71,8 +89,8 @@
     }
     if (/SHORTS/i.test(JSON.stringify(ti.overlays || []).slice(0, 2000)) && !dur) return null;
     return {
-      id: v.contentId, title: txt(md.title), channel: parts[0] || '', handle: '',
-      views: parts.find((p) => /показв|views|гледа/i.test(p)) || '', date: parts.find(isDateText) || '',
+      id: v.contentId, title: txt(md.title), channel: parts.find((p) => !isMetaPart(p)) || '', handle: '', chId: findChannelId(md.image) || findChannelId(md.metadata),
+      views: viewsPart(parts), date: parts.find(isDateText) || '',
       dur, live, thumb: lastUrl(ti.image && ti.image.sources),
     };
   }
@@ -93,6 +111,7 @@
     return {
       id: v.videoId, title: txt(v.headline) || txt(v.title), channel: txt(by),
       handle: be && be.canonicalBaseUrl ? decodeURIComponent(be.canonicalBaseUrl).replace(/^\/@?/, '') : '',
+      chId: be && /^UC/.test(be.browseId || '') ? be.browseId : '',
       views: txt(v.shortViewCountText) || txt(v.viewCountText), date: txt(v.publishedTimeText),
       dur, live, thumb: lastUrl(v.thumbnail && v.thumbnail.thumbnails),
     };
@@ -115,10 +134,66 @@
     return out;
   }
 
+  // ======================================================== Абонаменти, „По-късно“, скрити (локално, без профил)
+  const SUB_KEY = 'ytc-subs', LATER_KEY = 'ytc-later', DIS_KEY = 'ytc-dismissed';
+  const subs = {
+    all() { return LS.get(SUB_KEY, []); },
+    has(id) { return !!id && this.all().some((c) => c.id === id); },
+    add(c) { if (!c || !c.id || this.has(c.id)) return; const a = this.all(); a.unshift(Object.assign({ t: Date.now() }, c)); LS.set(SUB_KEY, a); LS.set('ytc-subs-feed', null); },
+    remove(id) { LS.set(SUB_KEY, this.all().filter((c) => c.id !== id)); LS.set('ytc-subs-feed', null); },
+  };
+  const later = {
+    all() { return LS.get(LATER_KEY, []); },
+    has(id) { return this.all().some((x) => x.id === id); },
+    add(it) { if (!it || !it.id || this.has(it.id)) return; const a = this.all(); a.unshift({ id: it.id, title: it.title, channel: it.channel, dur: it.dur, thumb: it.thumb, t: Date.now() }); LS.set(LATER_KEY, a.slice(0, 500)); },
+    remove(id) { LS.set(LATER_KEY, this.all().filter((x) => x.id !== id)); },
+  };
+  YTC.subs = subs; YTC.later = later;
+  let disCache = null;
+  const dismissed = () => disCache || (disCache = new Set(LS.get(DIS_KEY, [])));
+  function dismiss(id) { const a = LS.get(DIS_KEY, []); a.unshift(id); LS.set(DIS_KEY, a.slice(0, 2000)); disCache = null; }
+
+  /** Канал по адрес (/@име или /channel/UC…) → { id, name, handle } */
+  const resolved = new Map(LS.get('ytc-resolved', []));
+  async function resolveChannel(href) {
+    if (!href) return null;
+    const m = href.match(/\/channel\/(UC[\w-]+)/);
+    if (m) return { id: m[1] };
+    const h = (href.match(/\/@([^/?#]+)/) || [])[1];
+    if (!h) return null;
+    if (resolved.has(h)) return { id: resolved.get(h), handle: h };
+    const r = await api('navigation/resolve_url', { url: 'https://www.youtube.com/@' + h }, 'WEB');
+    const id = r && r.endpoint && r.endpoint.browseEndpoint && r.endpoint.browseEndpoint.browseId;
+    if (!id) return null;
+    resolved.set(h, id); LS.set('ytc-resolved', [...resolved].slice(-300));
+    return { id, handle: decodeURIComponent(h) };
+  }
+  YTC.resolveChannel = resolveChannel;
+
+  /** WEB "next" за видео – общ (кеширан) за дати, глави и собственика на видеото */
+  const nextCache = new Map();
+  YTC.webNext = function (id) {
+    if (!nextCache.has(id)) {
+      nextCache.set(id, api('next', { videoId: id }, 'WEB'));
+      if (nextCache.size > 30) nextCache.delete(nextCache.keys().next().value);
+    }
+    return nextCache.get(id);
+  };
+  YTC.videoOwner = async function (id) {
+    const r = await YTC.webNext(id);
+    let o = null;
+    const walk = (x, d) => { if (o || !x || typeof x !== 'object' || d > 30) return; if (x.videoOwnerRenderer) { o = x.videoOwnerRenderer; return; } for (const k in x) walk(x[k], d + 1); };
+    walk(r, 0);
+    if (!o) return null;
+    const be = o.navigationEndpoint && o.navigationEndpoint.browseEndpoint;
+    return be ? { id: be.browseId, name: txt(o.title), handle: (be.canonicalBaseUrl || '').replace(/^\/@?/, ''), avatar: lastUrl(o.thumbnail && o.thumbnail.thumbnails) } : null;
+  };
+
   // ======================================================== Филтри (същите като в настройките)
   const lines = (t) => String(t || '').split(/[\n,]+/).map((x) => x.trim().toLowerCase()).filter(Boolean);
   function allowed(it, watched) {
     if (!it.title) return false;
+    if (dismissed().has(it.id)) return false;
     if (S.hideLive && it.live) return false;
     if (S.hideWatched && watched.has(it.id)) return false;
     const m = (it.dur || '').match(/^(?:(\d+):)?(\d{1,2}):(\d{2})$/);
@@ -132,21 +207,41 @@
     return true;
   }
 
-  // ======================================================== История на гледане
-  let lastRecorded = '';
-  function recordHistory() {
-    const m = location.pathname === '/watch' && location.search.match(/[?&]v=([\w-]{6,})/);
-    if (!m || m[1] === lastRecorded) return;
-    const id = m[1];
-    setTimeout(() => {
-      if (!location.search.includes(id)) return;
-      lastRecorded = id;
-      const title = document.title.replace(/\s*-\s*YouTube\s*$/, '');
-      const h = LS.get(H_KEY, []).filter((x) => x.id !== id);
-      h.unshift({ id, title, t: Date.now() });
-      LS.set(H_KEY, h.slice(0, 80));
-      LS.set(F_KEY, null); // предложенията ще се обновят с новото гледане
-    }, 8000);
+  // ======================================================== Подредба и период
+  // Параметри на търсенето на YouTube (protobuf → base64): подредба + период + само видеа
+  const SORTS = [['rec', 'Препоръчани'], ['new', 'Най-нови'], ['views', 'Най-гледани'], ['rating', 'Най-висок рейтинг']];
+  const PERIODS = [['any', 'Всякога'], ['day', 'Днес'], ['week', 'Тази седмица'], ['month', 'Този месец'], ['year', 'Тази година']];
+  const SORT_CODE = { rec: 0, rating: 1, new: 2, views: 3 };
+  const PERIOD_CODE = { any: 0, day: 2, week: 3, month: 4, year: 5 };
+  const PERIOD_SEC = { day: 86400, week: 7 * 86400, month: 31 * 86400, year: 366 * 86400 };
+  function sp(sort, period) {
+    const f = [];
+    if (PERIOD_CODE[period]) f.push(0x08, PERIOD_CODE[period]);
+    f.push(0x10, 0x01); // само видеа
+    const b = [];
+    if (SORT_CODE[sort]) b.push(0x08, SORT_CODE[sort]);
+    b.push(0x12, f.length, ...f);
+    return btoa(String.fromCharCode(...b));
+  }
+  let view = LS.get('ytc-feed-view', { sort: 'rec', period: 'any' });
+  // "преди 7 м." (месеца), "2 седм.", "6 ч", "3 дни", "1 г.", "5 hours ago"…
+  const UNITS = [['сек', 1], ['мин', 60], ['седм', 604800], ['ч', 3600], ['ден', 86400], ['дн', 86400], ['д', 86400],
+    ['мес', 2592000], ['м', 2592000], ['год', 31536000], ['г', 31536000],
+    ['second', 1], ['minute', 60], ['hour', 3600], ['day', 86400], ['week', 604800], ['month', 2592000], ['year', 31536000]];
+  function ageSec(d) {
+    if (!d) return null;
+    const m = String(d).toLowerCase().match(/(\d+)\s*([^\s\d]+)/);
+    if (!m) return null;
+    for (const [u, mul] of UNITS) if (m[2].startsWith(u)) return +m[1] * mul;
+    return null;
+  }
+  function viewsNum(v) {
+    if (!v) return 0;
+    const m = v.replace(/\s/g, '').match(/([\d.,]+)\s*(млрд|млн|хил|B|M|K)?/i);
+    if (!m) return 0;
+    const n = parseFloat(m[1].replace(/\.(?=\d{3}\b)/g, '').replace(',', '.'));
+    const mul = { млрд: 1e9, b: 1e9, млн: 1e6, m: 1e6, хил: 1e3, k: 1e3 }[(m[2] || '').toLowerCase()] || 1;
+    return n * mul;
   }
 
   // ======================================================== Начална страница с предложения
@@ -159,12 +254,45 @@
     font:14px/1.35 Roboto,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;z-index:3}
   .dark{background:#0f0f0f;color:#f1f1f1}.light{background:#fff;color:#0f0f0f}
   .chips{display:flex;gap:8px;overflow-x:auto;padding:10px 12px;position:sticky;top:0;z-index:2;scrollbar-width:none}
-  .dark .chips{background:#0f0f0f}.light .chips{background:#fff}
+  .dark .chips,.dark .head{background:#0f0f0f}.light .chips,.light .head{background:#fff}
   .chips::-webkit-scrollbar{display:none}
   .chip{flex:0 0 auto;border:0;border-radius:8px;padding:7px 12px;font:500 14px inherit;white-space:nowrap}
   .dark .chip{background:#272727;color:#f1f1f1}.light .chip{background:#f2f2f2;color:#0f0f0f}
   .dark .chip.on{background:#f1f1f1;color:#0f0f0f}.light .chip.on{background:#0f0f0f;color:#fff}
-  .card{display:block;text-decoration:none;color:inherit;margin-bottom:16px}
+  .card{display:block;text-decoration:none;color:inherit;margin-bottom:16px;position:relative}
+  .sorts{display:flex;gap:8px;overflow-x:auto;padding:0 12px 10px;scrollbar-width:none;align-items:center}
+  .sorts::-webkit-scrollbar{display:none}
+  .sorts .chip{padding:5px 10px;font-size:13px}
+  .sel{flex:0 0 auto;border:0;border-radius:8px;padding:5px 8px;font:500 13px inherit}
+  .dark .sel{background:#272727;color:#f1f1f1}.light .sel{background:#f2f2f2;color:#0f0f0f}
+  .prog{position:absolute;left:0;bottom:0;height:3px;background:#ff0033}
+  .progbg{position:absolute;left:0;right:0;bottom:0;height:3px;background:rgba(255,255,255,.35)}
+  .cont{padding:4px 0 14px}
+  .cont h4{margin:0 12px 8px;font-size:16px}
+  .hs{display:flex;gap:10px;overflow-x:auto;padding:0 12px;scrollbar-width:none}
+  .hs::-webkit-scrollbar{display:none}
+  .hs .card{flex:0 0 62%;margin:0}
+  .hs .th{border-radius:10px}
+  .hs .meta{padding:6px 2px 0}.hs .tt{font-size:13.5px}
+  .hhead{display:flex;justify-content:space-between;align-items:center;padding:4px 12px 12px}
+  .hhead h4{margin:0;font-size:16px}
+  .lnk{border:0;background:none;color:#3ea6ff;font:500 14px inherit;padding:4px 0}
+  .card .meta{position:relative;padding-right:40px}
+  .more3{position:absolute;right:4px;top:6px;width:32px;height:32px;border:0;background:none;color:inherit;font-size:20px;opacity:.7;padding:0}
+  .mback{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10}
+  .msheet{position:fixed;left:0;right:0;bottom:0;border-radius:16px 16px 0 0;padding:10px 0 calc(14px + env(safe-area-inset-bottom));z-index:11}
+  .dark .msheet,.dark~.msheet{background:#212121;color:#f1f1f1}
+  .msheet{background:#212121;color:#f1f1f1}
+  .mtitle{padding:8px 18px 10px;font-weight:500;opacity:.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mrow{display:block;width:100%;text-align:left;border:0;background:none;color:inherit;font:15px inherit;padding:13px 18px}
+  .avs{padding-bottom:14px}
+  .av{flex:0 0 auto;width:64px;text-align:center;text-decoration:none;color:inherit;font-size:11px}
+  .av img{width:56px;height:56px;border-radius:50%;background:#333;display:block;margin:0 auto 4px;object-fit:cover}
+  .av span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .srow{display:flex;align-items:center;gap:12px;padding:8px 12px}
+  .srow img{width:40px;height:40px;border-radius:50%;background:#333;object-fit:cover}
+  .srow span{flex:1}
+  .x{position:absolute;top:8px;right:8px;width:28px;height:28px;border-radius:50%;border:0;background:rgba(0,0,0,.6);color:#fff;font-size:15px;line-height:28px;padding:0}
   .th{position:relative;aspect-ratio:16/9;background:#222;overflow:hidden}
   .th img{width:100%;height:100%;object-fit:cover;display:block}
   .dur{position:absolute;right:8px;bottom:8px;background:rgba(0,0,0,.8);color:#fff;font:500 12px inherit;padding:1px 5px;border-radius:4px}
@@ -225,8 +353,13 @@
     feedRoot.appendChild(el('style', null, FEED_CSS));
     const wrap = el('div', 'wrap');
     const chips = el('div', 'chips');
+    const sorts = el('div', 'sorts');
     feedList = el('div', 'list');
-    wrap.appendChild(chips); wrap.appendChild(feedList);
+    const head = el('div', 'head');
+    head.style.cssText = 'position:sticky;top:0;z-index:2';
+    chips.style.position = 'static';
+    head.appendChild(chips); head.appendChild(sorts);
+    wrap.appendChild(head); wrap.appendChild(feedList);
     feedRoot.appendChild(wrap);
     document.body.appendChild(feedHost);
     document.documentElement.classList.add('ytc-feed-on');
@@ -251,13 +384,76 @@
       const c = el('button', 'chip' + (activeChip === id ? ' on' : ''), label);
       c.addEventListener('click', () => {
         if (id === 'edit') { showPicker(); return; }
-        activeChip = id; renderChips(); startFeed(true);
+        activeChip = id; renderChips();
+        if (id === 'hist') showHistory(); else if (id === 'subs') showSubs(); else if (id === 'later') showLater(); else startFeed(true);
       });
       chips.appendChild(c);
     };
     add('all', 'За теб');
+    add('subs', '📺 Абонаменти');
+    add('later', '⏱ По-късно');
+    add('hist', '🕘 История');
     ints.forEach((i) => add('i:' + i, i));
     add('edit', ints.length ? '✎ Интереси' : '＋ Избери интереси');
+    renderSorts();
+  }
+
+  function renderSorts() {
+    const row = feedRoot.querySelector('.sorts');
+    while (row.firstChild) row.removeChild(row.firstChild);
+    if (activeChip === 'hist' || activeChip === 'subs' || activeChip === 'later') { row.style.display = 'none'; return; }
+    row.style.display = '';
+    for (const [k, l] of SORTS) {
+      const c = el('button', 'chip' + (view.sort === k ? ' on' : ''), l);
+      c.addEventListener('click', () => { view.sort = k; LS.set('ytc-feed-view', view); renderSorts(); startFeed(true); });
+      row.appendChild(c);
+    }
+    const sel = el('select', 'sel');
+    for (const [k, l] of PERIODS) { const o = el('option', null, '⏱ ' + l); o.value = k; if (view.period === k) o.selected = true; sel.appendChild(o); }
+    sel.addEventListener('change', () => { view.period = sel.value; LS.set('ytc-feed-view', view); startFeed(true); });
+    row.appendChild(sel);
+  }
+
+  // ---------- История с прогрес ----------
+  function showHistory() {
+    while (feedList.firstChild) feedList.removeChild(feedList.firstChild);
+    const h = (YTC.history ? YTC.history.all() : []);
+    if (!h.length) { feedList.appendChild(msg('Историята е празна', 'Видеата, които гледаш, ще се появяват тук – и ще продължават оттам, докъдето си стигнал.')); return; }
+    const head = el('div', 'hhead');
+    head.appendChild(el('h4', null, h.length + ' ' + (h.length === 1 ? 'видео' : 'видеа')));
+    const clr = el('button', 'lnk', 'Изчисти историята');
+    clr.addEventListener('click', () => { if (confirm('Да се изчисти ли цялата история на гледане?')) { YTC.history.clear(); showHistory(); } });
+    head.appendChild(clr);
+    feedList.appendChild(head);
+    for (const x of h) {
+      const c = card({ id: x.id, title: x.title, channel: x.channel, dur: x.len ? fmtDur(x.len) : '', views: '',
+        date: (x.done ? 'гледано' : x.pos ? 'спряно на ' + fmtDur(x.pos) : '') + ' • ' + ago(x.t) });
+      const del = el('button', 'x', '✕');
+      del.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); YTC.history.remove(x.id); c.remove(); });
+      c.appendChild(del);
+      feedList.appendChild(c);
+    }
+  }
+  function fmtDur(sec) {
+    sec = Math.round(sec);
+    const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s2 = sec % 60;
+    return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(s2).padStart(2, '0');
+  }
+  function ago(t) {
+    const d = (Date.now() - t) / 1000;
+    if (d < 3600) return 'преди ' + Math.max(1, Math.round(d / 60)) + ' мин';
+    if (d < 86400) return 'преди ' + Math.round(d / 3600) + ' ч';
+    return 'преди ' + Math.round(d / 86400) + ' дни';
+  }
+  function continueRow() {
+    const h = (YTC.history ? YTC.history.all() : []).filter((x) => !x.done && x.pos > 30 && x.len && Date.now() - x.t < 14 * 86400e3).slice(0, 10);
+    if (!h.length) return null;
+    const box = el('div', 'cont');
+    box.appendChild(el('h4', null, 'Продължи гледането'));
+    const hs = el('div', 'hs');
+    for (const x of h) hs.appendChild(card({ id: x.id, title: x.title, channel: x.channel, dur: fmtDur(x.len - x.pos) + ' ост.', views: '', date: '' }));
+    box.appendChild(hs);
+    return box;
   }
 
   function showPicker() {
@@ -295,6 +491,7 @@
   function card(it) {
     const a = el('a', 'card');
     a.href = '/watch?v=' + it.id;
+    if (it.channel) a.dataset.ch = it.channel;
     a.addEventListener('click', (e) => { e.preventDefault(); YTC.go('/watch?v=' + it.id); });
     const th = el('div', 'th');
     const img = el('img'); img.loading = 'lazy'; img.decoding = 'async'; img.alt = '';
@@ -302,12 +499,139 @@
     th.appendChild(img);
     if (it.live) th.appendChild(el('span', 'dur live', 'НА ЖИВО'));
     else if (it.dur) th.appendChild(el('span', 'dur', it.dur));
+    const hh = histMap().get(it.id);
+    if (hh && hh.len && (hh.pos || hh.done)) {
+      th.appendChild(el('div', 'progbg'));
+      const p = el('div', 'prog'); p.style.width = (hh.done ? 100 : Math.min(100, Math.round(hh.pos / hh.len * 100))) + '%';
+      th.appendChild(p);
+    }
     a.appendChild(th);
     const meta = el('div', 'meta');
     meta.appendChild(el('div', 'tt', it.title));
     meta.appendChild(el('div', 'sub', [it.channel, it.views, it.date].filter(Boolean).join(' • ')));
+    const more = el('button', 'more3', '⋮');
+    more.setAttribute('aria-label', 'Още');
+    more.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); cardMenu(it, a); });
+    meta.appendChild(more);
     a.appendChild(meta);
     return a;
+  }
+  let hmCache = null, hmT = 0;
+  function histMap() {
+    if (!hmCache || Date.now() - hmT > 3000) { hmCache = new Map((YTC.history ? YTC.history.all() : []).map((x) => [x.id, x])); hmT = Date.now(); }
+    return hmCache;
+  }
+
+  // ---------- меню на карта ----------
+  function cardMenu(it, cardEl) {
+    const back = el('div', 'mback'), sh = el('div', 'msheet');
+    const close = () => { back.remove(); sh.remove(); };
+    back.addEventListener('click', close);
+    sh.appendChild(el('div', 'mtitle', it.title));
+    const act = (label, fn) => { const b = el('button', 'mrow', label); b.addEventListener('click', () => { close(); fn(); }); sh.appendChild(b); };
+    if (later.has(it.id)) act('⏱ Махни от „По-късно“', () => { later.remove(it.id); if (activeChip === 'later') cardEl.remove(); toastMsg('Махнато от „По-късно“'); });
+    else act('⏱ Гледай по-късно', () => { later.add(it); toastMsg('✓ Запазено в „По-късно“'); });
+    if (it.chId) {
+      if (subs.has(it.chId)) act('📺 Спри да следваш ' + (it.channel || 'канала'), () => { subs.remove(it.chId); toastMsg('Вече не следваш ' + it.channel); });
+      else act('📺 Следвай ' + (it.channel || 'канала'), () => { subs.add({ id: it.chId, name: it.channel, handle: it.handle || '' }); toastMsg('✓ Следваш ' + it.channel); });
+    }
+    act('🙈 Не ме интересува', () => { dismiss(it.id); cardEl.remove(); toastMsg('Няма да го виждаш повече'); });
+    if (it.channel) act('⛔ Блокирай ' + it.channel, () => {
+      const ns = Object.assign({}, S);
+      ns.blockedChannels = (S.blockedChannels ? S.blockedChannels + '\n' : '') + (it.handle ? '@' + it.handle : it.channel);
+      if (YTC.saveSettings) YTC.saveSettings(ns);
+      feedList.querySelectorAll('.card').forEach((c) => { if (c.dataset.ch === it.channel) c.remove(); });
+      cardEl.remove();
+      toastMsg('⛔ ' + it.channel + ' е блокиран');
+    });
+    feedRoot.appendChild(back); feedRoot.appendChild(sh);
+  }
+  const toastMsg = (m) => { if (YTC.toast) YTC.toast(/^[✓⛔]/.test(m) ? m : '✓ ' + m.replace(/^✓\s*/, '')); };
+
+  // ---------- Абонаменти ----------
+  async function showSubs() {
+    while (feedList.firstChild) feedList.removeChild(feedList.firstChild);
+    const list = subs.all();
+    if (!list.length) {
+      feedList.appendChild(msg('Още не следваш канали', 'Натисни „Следвай“ под видео или на страницата на канал, или „⋮ → Следвай“ на всяко предложение. Новите им видеа ще се появяват тук, без Google профил.'));
+      return;
+    }
+    const top = el('div', 'hhead');
+    top.appendChild(el('h4', null, list.length + ' ' + (list.length === 1 ? 'канал' : 'канала')));
+    const mg = el('button', 'lnk', 'Управлявай');
+    mg.addEventListener('click', manageSubs);
+    top.appendChild(mg);
+    feedList.appendChild(top);
+    const av = el('div', 'hs avs');
+    const drawAvatars = () => { while (av.firstChild) av.removeChild(av.firstChild); for (const c of subs.all()) {
+      const b = el('a', 'av');
+      b.href = c.handle ? '/@' + c.handle : '/channel/' + c.id;
+      b.addEventListener('click', (e) => { e.preventDefault(); YTC.go(b.getAttribute('href')); });
+      const im = el('img'); im.alt = ''; im.loading = 'lazy'; if (c.avatar) im.src = c.avatar; b.appendChild(im);
+      b.appendChild(el('span', null, c.name || c.handle || ''));
+      av.appendChild(b);
+    } };
+    drawAvatars();
+    feedList.appendChild(av);
+    const cached = LS.get('ytc-subs-feed', null);
+    let items = cached && Date.now() - cached.t < 30 * 60e3 ? cached.items : null;
+    if (!items) {
+      skeleton(3);
+      const chunks = [];
+      for (let i = 0; i < Math.min(list.length, 30); i += 6) chunks.push(list.slice(i, i + 6));
+      items = [];
+      for (const ch of chunks) {
+        const res = await Promise.all(ch.map((c) => api('browse', { browseId: c.id, params: 'EgZ2aWRlb3PyBgQKAjoA' }, 'WEB').then((r) => {
+          if (!r) return [];
+          // аватар и име, ако ги нямаме
+          const md = r.metadata && r.metadata.channelMetadataRenderer;
+          if (md && (!c.avatar || !c.name)) {
+            const all = subs.all(); const me = all.find((x) => x.id === c.id);
+            if (me) { me.name = me.name || md.title; me.avatar = me.avatar || (md.avatar && md.avatar.thumbnails && md.avatar.thumbnails[0] && md.avatar.thumbnails[0].url) || ''; LS.set(SUB_KEY, all); }
+          }
+          return collect(r).slice(0, 12).map((x) => Object.assign(x, { channel: x.channel || (md && md.title) || c.name, chId: c.id }));
+        })));
+        res.forEach((r) => items.push(...r));
+        if (activeChip !== 'subs' || !feedList) return;
+      }
+      const watched = new Set();
+      items = items.filter((x) => allowed(x, watched));
+      items.sort((x, y) => (ageSec(x.date) ?? 9e12) - (ageSec(y.date) ?? 9e12));
+      items = items.slice(0, 120);
+      LS.set('ytc-subs-feed', { t: Date.now(), items });
+      clearSkeleton();
+      drawAvatars();
+    }
+    if (activeChip !== 'subs' || !feedList) return;
+    if (!items.length) { feedList.appendChild(msg('Няма видеа', 'Каналите, които следваш, още не са качили видеа или не се заредиха. Опитай пак след малко.')); return; }
+    for (const it of items) { if (it.date) rememberDate(it.id, it.date); feedList.appendChild(card(it)); }
+  }
+  function manageSubs() {
+    while (feedList.firstChild) feedList.removeChild(feedList.firstChild);
+    const top = el('div', 'hhead');
+    top.appendChild(el('h4', null, 'Канали, които следваш'));
+    const bk = el('button', 'lnk', 'Готово'); bk.addEventListener('click', showSubs); top.appendChild(bk);
+    feedList.appendChild(top);
+    for (const c of subs.all()) {
+      const r = el('div', 'srow');
+      const im = el('img'); im.alt = ''; if (c.avatar) im.src = c.avatar; r.appendChild(im);
+      r.appendChild(el('span', null, c.name || c.handle || c.id));
+      const x = el('button', 'lnk', 'Спри');
+      x.addEventListener('click', () => { subs.remove(c.id); r.remove(); });
+      r.appendChild(x);
+      feedList.appendChild(r);
+    }
+  }
+
+  // ---------- Гледай по-късно ----------
+  function showLater() {
+    while (feedList.firstChild) feedList.removeChild(feedList.firstChild);
+    const list = later.all();
+    if (!list.length) { feedList.appendChild(msg('Списъкът е празен', 'Запазвай видеа с „⋮ → Гледай по-късно“ или от бутона „Инструменти“ при гледане.')); return; }
+    const top = el('div', 'hhead');
+    top.appendChild(el('h4', null, list.length + ' ' + (list.length === 1 ? 'видео' : 'видеа') + ' за по-късно'));
+    feedList.appendChild(top);
+    for (const x of list) feedList.appendChild(card(x));
   }
 
   function skeleton(n) { for (let i = 0; i < n; i++) feedList.appendChild(el('div', 'sk')); }
@@ -320,20 +644,31 @@
     const hist = LS.get(H_KEY, []);
     const ints = LS.get(I_KEY, []);
     const jobs = [];
+    const sort = view.sort, period = view.period;
+    // при "Препоръчани" без период – свежо съдържание от последния месец; иначе – точно избраното
+    const prm = sort === 'rec' && period === 'any' ? sp('rec', first ? 'month' : 'any') : sp(sort, period);
+    // теми за търсене: интересите + най-гледаните канали от историята
+    const chanCount = {};
+    hist.slice(0, 60).forEach((h) => { if (h.channel) chanCount[h.channel] = (chanCount[h.channel] || 0) + 1; });
+    const topChannels = Object.keys(chanCount).sort((x, y) => chanCount[y] - chanCount[x]).slice(0, 3);
     if (activeChip.startsWith('i:')) {
       const q = activeChip.slice(2);
-      jobs.push(api('search', { query: q, params: first ? 'EgQIBBAB' : 'EgIQAQ%3D%3D' }, 'MWEB')); // този месец / всички
-      if (!first) jobs.push(api('search', { query: q + ' ' + new Date().getFullYear(), params: 'EgIQAQ%3D%3D' }, 'MWEB'));
+      const page = feedState.page = (feedState.page || 0) + 1;
+      jobs.push(api('search', { query: page > 1 ? q + ' ' + ['', 'нови', 'най-добрите', new Date().getFullYear()][page % 4] : q, params: prm }, 'MWEB'));
     } else {
-      let seeds;
-      if (first) seeds = hist.slice(0, 2).map((h) => h.id).concat(shuffle(hist.slice(2, 15).map((h) => h.id)).slice(0, 2));
-      else seeds = feedState.seeds.splice(0, 3);
+      let seeds = [];
+      if (sort === 'rec' || sort === 'new' || sort === 'views') {
+        if (first) seeds = hist.slice(0, 2).map((h) => h.id).concat(shuffle(hist.slice(2, 15).map((h) => h.id)).slice(0, 2));
+        else seeds = feedState.seeds.splice(0, 3);
+      }
       for (const id of seeds) jobs.push(api('next', { videoId: id }, 'WEB'));
-      for (const q of shuffle(ints.slice()).slice(0, first ? 2 : 1)) jobs.push(api('search', { query: q, params: 'EgQIBBAB' }, 'MWEB'));
+      const qs = shuffle(ints.slice()).slice(0, first ? 2 : 1);
+      if (sort !== 'rec' || !qs.length) qs.push(...shuffle(topChannels.slice()).slice(0, first ? 2 : 1));
+      for (const q of qs) jobs.push(api('search', { query: q, params: prm }, 'MWEB'));
       if (!jobs.length) return null; // няма история и интереси
     }
     const res = await Promise.all(jobs);
-    const lists = res.filter(Boolean).map((r) => shuffle(collect(r).slice(0, 25)));
+    const lists = res.filter(Boolean).map((r) => { const l = collect(r).slice(0, 25); return sort === 'rec' ? shuffle(l) : l; });
     const watched = new Set(hist.map((h) => h.id));
     const out = [];
     for (let i = 0; lists.some((l) => i < l.length); i++) {       // редуване: по малко от всеки източник
@@ -348,15 +683,22 @@
     }
     // следващите "семена" за безкрайно превъртане – от самите предложения
     feedState.seeds.push(...shuffle(out.slice(0, 12).map((x) => x.id)));
-    return out;
+    // период и подредба важат и за свързаните видеа (по датата/показванията им)
+    let res2 = out;
+    if (period !== 'any') res2 = res2.filter((x) => { const a = ageSec(x.date); return a == null || a <= PERIOD_SEC[period]; });
+    if (sort === 'new') res2.sort((x, y) => (ageSec(x.date) ?? 9e12) - (ageSec(y.date) ?? 9e12));
+    else if (sort === 'views') res2.sort((x, y) => viewsNum(y.views) - viewsNum(x.views));
+    return res2;
   }
 
   async function startFeed(force) {
     if (!feedList) return;
     feedState = { items: [], seen: new Set(), seeds: [], loading: false, done: false };
     while (feedList.firstChild) feedList.removeChild(feedList.firstChild);
-    const cached = activeChip === 'all' && LS.get(F_KEY, null);
+    const plain = activeChip === 'all' && view.sort === 'rec' && view.period === 'any';
+    const cached = plain && LS.get(F_KEY, null);
     if (!force && cached && cached.items && Date.now() - cached.t < 6 * 3600e3) {
+      { const c = continueRow(); if (c) feedList.appendChild(c); }
       for (const it of cached.items) { feedState.seen.add(it.id); feedList.appendChild(card(it)); }
       feedState.seeds = cached.seeds || [];
       feedState.items = cached.items;
@@ -370,14 +712,15 @@
     if (!cached || force || !cached.items) { clearSkeleton(); while (feedList.firstChild) feedList.removeChild(feedList.firstChild); }
     else { while (feedList.firstChild) feedList.removeChild(feedList.firstChild); } // свежите заместват кешираните
     if (!items.length) { feedList.appendChild(msg('Няма нови предложения', 'Опитай „Избери интереси“ или потърси нещо.')); return; }
+    if (activeChip === 'all') { const c = continueRow(); if (c) feedList.appendChild(c); }
     items.forEach((it) => feedList.appendChild(card(it)));
     feedState.items = items;
-    if (activeChip === 'all') LS.set(F_KEY, { t: Date.now(), items: items.slice(0, 40), seeds: feedState.seeds.slice(0, 20) });
+    if (plain) LS.set(F_KEY, { t: Date.now(), items: items.slice(0, 40), seeds: feedState.seeds.slice(0, 20) });
   }
   function msg(h, p) { const b = el('div', 'msg'); b.appendChild(el('h2', null, h)); b.appendChild(el('p', null, p)); return b; }
 
   async function loadMore() {
-    if (!feedList || feedState.loading || feedState.done) return;
+    if (!feedList || feedState.loading || feedState.done || /^(hist|subs|later)$/.test(activeChip)) return;
     if (!feedState.seeds.length && !activeChip.startsWith('i:') && !LS.get(I_KEY, []).length) { feedState.done = true; return; }
     feedState.loading = true;
     const m = el('div', 'more', 'Зареждане…'); feedList.appendChild(m);
@@ -406,7 +749,7 @@
   async function fetchDatesFor(videoId) {
     if (askedDates.has(videoId)) return;
     askedDates.add(videoId);
-    const r = await api('next', { videoId }, 'WEB');
+    const r = await YTC.webNext(videoId);
     if (!r) return;
     for (const it of collect(r)) if (it.date) rememberDate(it.id, it.date);
     paintDates();
@@ -637,17 +980,82 @@
     else if (cmd === 'toggle') { if (v.paused) v.play().catch(() => {}); else v.pause(); }
   };
 
+  // ======================================================== Бутон „Следвай“ (вместо „Абониране“, което иска профил)
+  let loggedIn = null;
+  function isLoggedIn() {
+    if (loggedIn !== null) return loggedIn;
+    for (const sc of document.scripts) { const m = sc.textContent && sc.textContent.match(/"LOGGED_IN":(true|false)/); if (m) return (loggedIn = m[1] === 'true'); }
+    return false;
+  }
+  const FOLLOW_CSS = 'border:0;border-radius:18px;padding:0 16px;height:36px;font:500 14px Roboto,-apple-system,sans-serif;white-space:nowrap;flex:0 0 auto;margin-left:8px;';
+  function styleFollow(b, on) {
+    const dark = isDark();
+    b.textContent = on ? '✓ Следваш' : 'Следвай';
+    b.style.cssText = FOLLOW_CSS + (on ? (dark ? 'background:#272727;color:#f1f1f1' : 'background:#f2f2f2;color:#0f0f0f')
+      : (dark ? 'background:#f1f1f1;color:#0f0f0f' : 'background:#0f0f0f;color:#fff'));
+  }
+  function followButtons() {
+    if (!S.enabled || isLoggedIn()) return;
+    let spots = [];
+    if (location.pathname === '/watch') {
+      const owner = document.querySelector('ytm-slim-owner-renderer');
+      if (owner) {
+        const a = owner.querySelector('a[href*="/@"], a[href*="/channel/"]');
+        spots.push({ box: owner, href: a && a.getAttribute('href'), name: (owner.querySelector('.slim-owner-channel-name, h3') || a || {}).textContent || '' });
+      }
+    } else if (/^\/(@[^/]+|channel\/UC[\w-]+)/.test(location.pathname)) {
+      const head = document.querySelector('yt-page-header-view-model, ytm-c4-tabbed-header-renderer, page-header-view-model, ytm-browse header');
+      if (head) spots.push({ box: head, href: location.pathname, name: (head.querySelector('h1, .page-header-view-model-wiz__page-header-title, yt-dynamic-text-view-model') || {}).textContent || '' });
+    }
+    for (const sp of spots) {
+      if (!sp.href) continue;
+      let yt = sp.box.querySelector('ytm-subscribe-button-renderer, yt-subscribe-button-view-model, subscribe-button-view-model, .ytmSubscribeButtonRendererHost');
+      if (!yt) { // новият дизайн: обикновен бутон с текст "Абониране"
+        const btn = [...sp.box.querySelectorAll('button, a[role="button"]')].find((x) => !x.classList.contains('ytc-follow') && /^(Абониране|Абонирай се|Абонирайте се|Subscribe)$/i.test((x.textContent || '').trim()));
+        if (btn) yt = btn.closest('button-view-model, yt-button-view-model, .yt-flexible-actions-view-model-wiz__action, .ytFlexibleActionsViewModelAction') || btn;
+      }
+      let b = sp.box.querySelector('.ytc-follow');
+      if (b && b.dataset.href === sp.href) continue;
+      if (b) b.remove();
+      b = document.createElement('button');
+      b.className = 'ytc-follow'; b.dataset.href = sp.href;
+      const h = (sp.href.match(/\/@([^/?#]+)/) || [])[1];
+      const known = subs.all().find((c) => (h && c.handle && c.handle.toLowerCase() === decodeURIComponent(h).toLowerCase()) || sp.href.includes(c.id));
+      styleFollow(b, !!known);
+      b.addEventListener('click', async (e) => {
+        e.preventDefault(); e.stopPropagation();
+        const k = subs.all().find((c) => (h && c.handle && c.handle.toLowerCase() === decodeURIComponent(h).toLowerCase()) || sp.href.includes(c.id));
+        const keepWide = () => { if (b.dataset.wide) { b.style.width = '100%'; b.style.height = '40px'; b.style.marginLeft = '0'; } };
+        if (k) { subs.remove(k.id); styleFollow(b, false); keepWide(); toastMsg('Вече не следваш ' + (k.name || '')); return; }
+        b.textContent = '…';
+        const r = await resolveChannel(sp.href);
+        if (!r) { styleFollow(b, false); toastMsg('⛔ Каналът не можа да се намери'); return; }
+        const name = sp.name.trim().split('\n')[0] || r.handle || '';
+        subs.add({ id: r.id, name, handle: r.handle || '' });
+        styleFollow(b, true); keepWide();
+        toastMsg('✓ Следваш ' + name + ' – новите видеа са в „Абонаменти“');
+      });
+      if (yt) {
+        const wide = yt.getBoundingClientRect().width > 200;   // голям бутон в шапката на канала
+        yt.style.display = 'none';
+        yt.after(b);
+        if (wide) { b.style.width = '100%'; b.style.height = '40px'; b.style.marginLeft = '0'; b.dataset.wide = '1'; }
+      }
+      else sp.box.appendChild(b);
+    }
+  }
+
   // ======================================================== Общ цикъл
   let lastPath = '';
   function refresh() {
     if (!document.body) return;
     if (feedWanted()) mountFeed(); else unmountFeed();
     if (ccWanted()) mountCC(); else unmountCC();
+    followButtons();
     if (location.pathname !== lastPath) {
       lastPath = location.pathname;
       if (feedHost) placeFeed();
     }
-    recordHistory();
     if (S.enabled && S.showDates) {
       const v = location.pathname === '/watch' && curVideo();
       if (v && !S.hideRelated && !askedDates.has(v) && !pendingDates.has(v) && document.querySelector(ITEM_SEL)) {

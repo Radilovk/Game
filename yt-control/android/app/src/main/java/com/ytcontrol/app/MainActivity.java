@@ -53,7 +53,29 @@ public class MainActivity extends Activity {
     private static final String UPDATE_URL = "https://radilovk.github.io/Game/yt-control/dist/yt-control.user.js";
 
     private FrameLayout root;
-    private WebView web;
+    private BgWebView web;
+
+    /**
+     * WebView, който може да "остане видим" за Chromium, докато свири звук.
+     * Иначе двигателят сам спира видеото, щом приложението отиде във фонов режим
+     * или екранът се заключи (така работи Chrome за Android по подразбиране).
+     */
+    static class BgWebView extends WebView {
+        boolean keepVisible = false;
+        BgWebView(android.content.Context c) { super(c); }
+
+        @Override
+        protected void onWindowVisibilityChanged(int visibility) {
+            super.onWindowVisibilityChanged(keepVisible ? View.VISIBLE : visibility);
+        }
+
+        void setKeepVisible(boolean on) {
+            if (keepVisible == on) return;
+            keepVisible = on;
+            // прилагаме веднага истинското (или "видимото") състояние
+            super.onWindowVisibilityChanged(on ? View.VISIBLE : getWindowVisibility());
+        }
+    }
     private View customView;
     private WebChromeClient.CustomViewCallback customCallback;
     private boolean docStartInjected = false;
@@ -67,7 +89,7 @@ public class MainActivity extends Activity {
 
         root = new FrameLayout(this);
         root.setBackgroundColor(Color.parseColor("#0F0F0F"));
-        web = new WebView(this);
+        web = new BgWebView(this);
         root.addView(web, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(root);
 
@@ -96,8 +118,16 @@ public class MainActivity extends Activity {
         }
 
         web.addJavascriptInterface(new Bridge(), "YTCApp");
-        PlaybackService.controller = (cmd) -> ui.post(() ->
-                web.evaluateJavascript("window.YTC && YTC.mediaCommand && YTC.mediaCommand('" + cmd.replaceAll("[^a-z]", "") + "')", null));
+        PlaybackService.controller = (cmd) -> ui.post(() -> {
+            if ("released".equals(cmd)) {       // известието е затворено / дълга пауза
+                web.setKeepVisible(false);
+                if (!hasWindowFocus()) web.onPause();
+                return;
+            }
+            web.setKeepVisible(true);
+            web.onResume();
+            web.evaluateJavascript("window.YTC && YTC.mediaCommand && YTC.mediaCommand('" + cmd.replaceAll("[^a-z]", "") + "')", null);
+        });
         web.setWebViewClient(new Client());
         web.setWebChromeClient(new Chrome());
 
@@ -140,13 +170,18 @@ public class MainActivity extends Activity {
         public void media(boolean isPlaying, String title, String artist) {
             onYouTube(() -> {
                 playing = isPlaying;
-                if (isPlaying) askNotificationPermission();
+                if (isPlaying) { askNotificationPermission(); web.setKeepVisible(true); }
+                updatePip();
                 if (isPlaying || serviceStarted) {
                     serviceStarted = true;
                     PlaybackService.update(MainActivity.this, isPlaying, title, artist);
                 }
             });
         }
+
+        /** Включва/изключва „картина в картината“ (настройка в панела 🛡). */
+        @android.webkit.JavascriptInterface
+        public void setPip(boolean on) { onYouTube(() -> { pipEnabled = on; updatePip(); }); }
 
         /** Запазва файл (напр. надписи) в „Изтегляния/YT Kontrol“. */
         @android.webkit.JavascriptInterface
@@ -155,7 +190,60 @@ public class MainActivity extends Activity {
         }
     }
 
-    private boolean playing = false, serviceStarted = false;
+    private boolean playing = false, serviceStarted = false, pipEnabled = true, leftPip = false, stopped = false;
+
+    // ---------------------------------------------------------------- картина в картината
+    private android.app.PictureInPictureParams pipParams() {
+        int fl = android.app.PendingIntent.FLAG_UPDATE_CURRENT | android.app.PendingIntent.FLAG_IMMUTABLE;
+        android.app.PendingIntent toggle = android.app.PendingIntent.getService(this, 5,
+                new Intent(this, PlaybackService.class).setAction(PlaybackService.ACTION_TOGGLE), fl);
+        android.app.RemoteAction act = new android.app.RemoteAction(
+                android.graphics.drawable.Icon.createWithResource(this, playing ? android.R.drawable.ic_media_pause : android.R.drawable.ic_media_play),
+                playing ? "Пауза" : "Пусни", playing ? "Пауза" : "Пусни", toggle);
+        android.app.PictureInPictureParams.Builder b = new android.app.PictureInPictureParams.Builder()
+                .setAspectRatio(new android.util.Rational(16, 9))
+                .setActions(java.util.Collections.singletonList(act));
+        if (android.os.Build.VERSION.SDK_INT >= 31) {
+            b.setAutoEnterEnabled(pipEnabled && playing);   // жест "начало" → видеото отива в малко прозорче
+            b.setSeamlessResizeEnabled(true);
+        }
+        return b.build();
+    }
+
+    private void updatePip() {
+        try { setPictureInPictureParams(pipParams()); } catch (Exception ignored) { }
+    }
+
+    @Override
+    protected void onUserLeaveHint() {
+        super.onUserLeaveHint();
+        // до Android 11 няма автоматично влизане – правим го ръчно, когато потребителят излиза, докато свири
+        if (android.os.Build.VERSION.SDK_INT < 31 && pipEnabled && playing && customView == null) {
+            try { enterPictureInPictureMode(pipParams()); } catch (Exception ignored) { }
+        }
+    }
+
+    @Override
+    public void onPictureInPictureModeChanged(boolean inPip, android.content.res.Configuration cfg) {
+        super.onPictureInPictureModeChanged(inPip, cfg);
+        if (inPip) web.setKeepVisible(true);
+        else if (stopped) web.evaluateJavascript("window.YTC && YTC.mediaCommand && YTC.mediaCommand('pause')", null); // затворено с ✕
+        else leftPip = true;   // ако следва onStop – прозорчето е затворено с ✕
+        web.evaluateJavascript("document.documentElement.classList.toggle('ytc-pip'," + inPip + ")", null);
+    }
+
+    @Override
+    protected void onStart() { super.onStart(); stopped = false; }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        stopped = true;
+        if (leftPip) {          // затворено малко прозорче → спираме видеото, както в YouTube
+            leftPip = false;
+            web.evaluateJavascript("window.YTC && YTC.mediaCommand && YTC.mediaCommand('pause')", null);
+        }
+    }
 
     private void onYouTube(Runnable r) {
         ui.post(() -> {
@@ -230,11 +318,11 @@ public class MainActivity extends Activity {
     }
 
     @Override
-    protected void onResume() { super.onResume(); web.onResume(); }
+    protected void onResume() { super.onResume(); leftPip = false; web.onResume(); }
 
     @Override
     protected void onPause() {
-        if (!playing) web.onPause();   // докато свири – продължава във фонов режим
+        if (!web.keepVisible) web.onPause();   // докато има активно слушане – продължава във фонов режим
         CookieManager.getInstance().flush();
         super.onPause();
     }
