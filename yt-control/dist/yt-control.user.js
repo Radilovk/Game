@@ -1,9 +1,13 @@
 // ==UserScript==
 // @name         YT Контрол – блокер на Shorts и реклами (мобилен)
 // @namespace    yt-control
-// @version      2.1.0
+// @version      2.2.0
 // @description  Изрязва Shorts и рекламите от данните на m.youtube.com, преди да се покажат. Филтри по думи и канали, фокус режим.
 // @match        https://m.youtube.com/*
+// @match        https://radilovk.github.io/Game/yt-control/*
+// @homepageURL  https://radilovk.github.io/Game/yt-control/
+// @updateURL    https://radilovk.github.io/Game/yt-control/dist/yt-control.user.js
+// @downloadURL  https://radilovk.github.io/Game/yt-control/dist/yt-control.user.js
 // @run-at       document-start
 // @inject-into  content
 // @grant        none
@@ -14,7 +18,7 @@
 (function () {
   'use strict';
   const YTC = (globalThis.YTC = globalThis.YTC || {});
-  YTC.VERSION = '2.1.0';
+  YTC.VERSION = '2.2.0';
   YTC.KEY = 'ytc-settings';
 
   YTC.SCHEMA = [
@@ -728,6 +732,15 @@
   'use strict';
   const YTC = globalThis.YTC;
   if (window.top !== window || window.__ytcBoot) return;
+  // На страницата за инсталиране само съобщаваме, че модулът е инсталиран
+  if (location.hostname !== 'm.youtube.com') {
+    const mark = () => {
+      document.documentElement.setAttribute('data-ytc-installed', YTC.VERSION);
+      document.dispatchEvent(new CustomEvent('ytc-installed'));
+    };
+    if (document.documentElement) mark(); else document.addEventListener('DOMContentLoaded', mark);
+    return;
+  }
   window.__ytcBoot = true;
 
   // ---- 1) Слой "данни": трябва да влезе в самата страница преди скриптовете на YouTube ----

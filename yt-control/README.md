@@ -3,6 +3,8 @@
 Работи в **мобилния YouTube (m.youtube.com)** на **iPhone (Safari)** и **Android (Firefox)**, с твоя профил, абонаменти и история.
 Инсталира се като един файл: [`dist/yt-control.user.js`](dist/yt-control.user.js).
 
+**👉 Страница за инсталиране (стъпка по стъпка, разпознава телефона):** https://radilovk.github.io/Game/yt-control/
+
 ## Как работи отвътре
 
 m.youtube.com не идва като готова страница. Браузърът получава **JSON данни** и YouTube рисува екрана от тях:

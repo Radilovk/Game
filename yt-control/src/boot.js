@@ -4,6 +4,15 @@
   'use strict';
   const YTC = globalThis.YTC;
   if (window.top !== window || window.__ytcBoot) return;
+  // На страницата за инсталиране само съобщаваме, че модулът е инсталиран
+  if (location.hostname !== 'm.youtube.com') {
+    const mark = () => {
+      document.documentElement.setAttribute('data-ytc-installed', YTC.VERSION);
+      document.dispatchEvent(new CustomEvent('ytc-installed'));
+    };
+    if (document.documentElement) mark(); else document.addEventListener('DOMContentLoaded', mark);
+    return;
+  }
   window.__ytcBoot = true;
 
   // ---- 1) Слой "данни": трябва да влезе в самата страница преди скриптовете на YouTube ----

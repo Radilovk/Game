@@ -9,6 +9,10 @@ const header = `// ==UserScript==
 // @version      ${version}
 // @description  Изрязва Shorts и рекламите от данните на m.youtube.com, преди да се покажат. Филтри по думи и канали, фокус режим.
 // @match        https://m.youtube.com/*
+// @match        https://radilovk.github.io/Game/yt-control/*
+// @homepageURL  https://radilovk.github.io/Game/yt-control/
+// @updateURL    https://radilovk.github.io/Game/yt-control/dist/yt-control.user.js
+// @downloadURL  https://radilovk.github.io/Game/yt-control/dist/yt-control.user.js
 // @run-at       document-start
 // @inject-into  content
 // @grant        none
