@@ -34,6 +34,40 @@
     load();
     document.addEventListener('ytc-settings', load);
 
+    // ---------- Слушане във фонов режим ----------
+    // YouTube спира видеото, когато страницата стане "скрита" (заключен екран, друго приложение).
+    // Страницата винаги вижда "visible", а събитието visibilitychange не стига до кода на YouTube.
+    if (S.enabled && S.backgroundPlay !== false) {
+      const vis = { hidden: false, webkitHidden: false, visibilityState: 'visible', webkitVisibilityState: 'visible' };
+      for (const k in vis) {
+        try { Object.defineProperty(Document.prototype, k, { configurable: true, get: () => vis[k] }); } catch (e) { /* */ }
+        try { Object.defineProperty(document, k, { configurable: true, get: () => vis[k] }); } catch (e) { /* */ }
+      }
+      const stop = (e) => { e.stopImmediatePropagation(); };
+      for (const t of ['visibilitychange', 'webkitvisibilitychange']) {
+        window.addEventListener(t, stop, true);
+        document.addEventListener(t, stop, true);
+      }
+    }
+
+    // ---------- Команди от интерфейса (друг "свят") към плейъра ----------
+    document.addEventListener('ytc-cmd', (e) => {
+      let c = {};
+      try { c = parse(String(e.detail || '{}')); } catch (x) { return; }
+      const p = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
+      if (!p) return;
+      try {
+        if (c.cmd === 'cc-on') {
+          if (p.loadModule) p.loadModule('captions');
+          if (p.setOption) p.setOption('captions', 'track', c.lang ? { languageCode: c.lang } : {});
+        } else if (c.cmd === 'cc-off') {
+          if (p.setOption) p.setOption('captions', 'track', {});
+          if (p.unloadModule) p.unloadModule('captions');
+        } else if (c.cmd === 'play' && p.playVideo) p.playVideo();
+        else if (c.cmd === 'pause' && p.pauseVideo) p.pauseVideo();
+      } catch (x) { /* */ }
+    });
+
     // ---------- помощни ----------
     const txt = (t) => !t ? '' : typeof t === 'string' ? t : t.simpleText || t.content ||
       (Array.isArray(t.runs) ? t.runs.map((r) => r.text || '').join('') : '');
@@ -149,6 +183,12 @@
         if (!S.enabled || !obj || typeof obj !== 'object') return obj;
         // само отговори на YouTube (всички имат responseContext), за да не пипаме чужди данни
         if (!('responseContext' in obj) && !('playerResponse' in obj) && !('onResponseReceivedActions' in obj)) return obj;
+        // езиците на надписите за текущото видео – за бутона "CC"
+        if (obj.captions && obj.videoDetails && obj.captions.playerCaptionsTracklistRenderer) {
+          const r = obj.captions.playerCaptionsTracklistRenderer;
+          const tracks = (r.captionTracks || []).map((t) => ({ lang: t.languageCode, name: txt(t.name), kind: t.kind || '', tr: !!t.isTranslatable }));
+          document.documentElement.setAttribute('data-ytc-cc', JSON.stringify({ v: obj.videoDetails.videoId, tracks }));
+        }
         walk(obj, 0);
         if (!reported) { reported = true; document.documentElement.setAttribute('data-ytc-hook', 'on'); }
         if (!statsTimer) statsTimer = setTimeout(() => {

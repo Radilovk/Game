@@ -2,19 +2,27 @@
 (function () {
   'use strict';
   const YTC = (globalThis.YTC = globalThis.YTC || {});
-  YTC.VERSION = '2.3.0';
+  YTC.VERSION = '3.0.0';
   YTC.KEY = 'ytc-settings';
 
   YTC.SCHEMA = [
     { group: 'Shorts' },
     { key: 'blockShorts', label: 'Блокирай Shorts напълно', hint: 'Изчезват навсякъде. Линк към Short не се отваря изобщо.', def: true },
 
+    { group: 'Начална страница' },
+    { key: 'smartHome', label: 'Предложения при отваряне', hint: 'По това, което гледаш, и по твоите интереси', def: true },
+
+    { group: 'Гледане' },
+    { key: 'backgroundPlay', label: 'Слушане във фонов режим', hint: 'Продължава при заключен екран и в други приложения', def: true },
+    { key: 'showDates', label: 'Дата на качване навсякъде', hint: 'Добавя датата и в препоръките под видеото', def: true },
+    { key: 'captionsButton', label: 'Бутон за изтегляне на надписи', hint: 'Бутон „CC“ при гледане на видео', def: true },
+
     { group: 'Реклами' },
     { key: 'hideAds', label: 'Премахвай рекламите от данните', hint: 'Най-чисто. Ако клиповете тръгват бавно – изключи го, остава прескачането', def: true },
     { key: 'skipVideoAds', label: 'Прескачай видео рекламите', hint: 'Ако мине реклама: скрита, без звук, превъртана за миг', def: true },
 
     { group: 'Съдържание' },
-    { key: 'hideHomeFeed', label: 'Фокус режим', hint: 'Празна начална страница, без препоръки', def: false },
+    { key: 'hideHomeFeed', label: 'Фокус режим', hint: 'Празна начална страница – без никакви предложения', def: false },
     { key: 'hideRelated', label: 'Без препоръки под видеото', def: false },
     { key: 'hideComments', label: 'Без коментари', def: false },
     { key: 'hideLive', label: 'Без излъчвания на живо', def: false },

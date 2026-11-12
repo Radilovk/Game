@@ -138,6 +138,7 @@
     // резервното филтриране по DOM е нужно само ако слоят "данни" не е активен
     if (document.documentElement.getAttribute('data-ytc-hook') !== 'on') domFilter();
     if (YTC.onPass) YTC.onPass();
+    if (YTC.featuresTick) YTC.featuresTick();
   }
   function schedule() { if (!scheduled) { scheduled = true; setTimeout(pass, 250); } }
 
@@ -162,6 +163,7 @@
 
   YTC.domApply = function (ns) {
     S = ns;
+    if (YTC.featuresApply) YTC.featuresApply(ns);
     document.querySelectorAll('[data-ytc-hidden]').forEach((e) => e.removeAttribute('data-ytc-hidden'));
     lastHref = '';
     if (!S.enabled && document.documentElement) document.documentElement.classList.remove('ytc-home');
@@ -170,6 +172,7 @@
 
   YTC.domStart = function (initial) {
     S = initial;
+    if (YTC.featuresApply) YTC.featuresApply(initial);
     document.addEventListener('click', onClick, true);
     ['state-navigateend', 'yt-navigate-finish', 'popstate'].forEach((ev) => window.addEventListener(ev, schedule, true));
     new MutationObserver(schedule).observe(document, { childList: true, subtree: true });

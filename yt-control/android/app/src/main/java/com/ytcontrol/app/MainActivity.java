@@ -96,6 +96,8 @@ public class MainActivity extends Activity {
         }
 
         web.addJavascriptInterface(new Bridge(), "YTCApp");
+        PlaybackService.controller = (cmd) -> ui.post(() ->
+                web.evaluateJavascript("window.YTC && YTC.mediaCommand && YTC.mediaCommand('" + cmd.replaceAll("[^a-z]", "") + "')", null));
         web.setWebViewClient(new Client());
         web.setWebChromeClient(new Chrome());
 
@@ -125,10 +127,80 @@ public class MainActivity extends Activity {
                 .show();
     }
 
-    /** Мост за панела 🛡 в страницата. Само едно безопасно действие – отваряне на системна настройка. */
+    /**
+     * Мост между модула в страницата и Android. Действията са ограничени и се изпълняват
+     * само докато в приложението е отворен m.youtube.com.
+     */
     private class Bridge {
         @android.webkit.JavascriptInterface
-        public void openLinkSettings() { ui.post(MainActivity.this::openLinkSettings); }
+        public void openLinkSettings() { onYouTube(MainActivity.this::openLinkSettings); }
+
+        /** Видеото тръгна / спря – известие и фоново слушане. */
+        @android.webkit.JavascriptInterface
+        public void media(boolean isPlaying, String title, String artist) {
+            onYouTube(() -> {
+                playing = isPlaying;
+                if (isPlaying) askNotificationPermission();
+                if (isPlaying || serviceStarted) {
+                    serviceStarted = true;
+                    PlaybackService.update(MainActivity.this, isPlaying, title, artist);
+                }
+            });
+        }
+
+        /** Запазва файл (напр. надписи) в „Изтегляния/YT Kontrol“. */
+        @android.webkit.JavascriptInterface
+        public void saveFile(String name, String mime, String content) {
+            onYouTube(() -> saveToDownloads(name, mime, content));
+        }
+    }
+
+    private boolean playing = false, serviceStarted = false;
+
+    private void onYouTube(Runnable r) {
+        ui.post(() -> {
+            String u = web.getUrl();
+            if (u != null && u.startsWith("https://m.youtube.com/")) r.run();
+        });
+    }
+
+    private void askNotificationPermission() {
+        if (android.os.Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            android.content.SharedPreferences p = getSharedPreferences("ytc", MODE_PRIVATE);
+            if (p.getBoolean("askedNotif", false)) return;
+            p.edit().putBoolean("askedNotif", true).apply();
+            requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 11);
+        }
+    }
+
+    private void saveToDownloads(String name, String mime, String content) {
+        String clean = (name == null ? "captions.srt" : name).replaceAll("[\\\\/:*?\"<>|]+", " ").trim();
+        if (clean.isEmpty()) clean = "captions.srt";
+        byte[] data = ("\uFEFF" + (content == null ? "" : content)).getBytes(StandardCharsets.UTF_8);
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                android.content.ContentValues v = new android.content.ContentValues();
+                v.put(android.provider.MediaStore.Downloads.DISPLAY_NAME, clean);
+                v.put(android.provider.MediaStore.Downloads.MIME_TYPE, mime == null ? "text/plain" : mime);
+                v.put(android.provider.MediaStore.Downloads.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS + "/YT Kontrol");
+                Uri uri = getContentResolver().insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
+                if (uri == null) throw new java.io.IOException("insert");
+                try (java.io.OutputStream out = getContentResolver().openOutputStream(uri)) { out.write(data); }
+            } else {
+                if (checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(new String[]{android.Manifest.permission.WRITE_EXTERNAL_STORAGE}, 12);
+                    toast("Разреши достъпа до файловете и натисни отново");
+                    return;
+                }
+                File dir = new File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS), "YT Kontrol");
+                if (!dir.exists() && !dir.mkdirs()) throw new java.io.IOException("mkdirs");
+                try (FileOutputStream out = new FileOutputStream(new File(dir, clean))) { out.write(data); }
+            }
+            toast("Запазено в Изтегляния/YT Kontrol:\n" + clean);
+        } catch (Exception e) {
+            toast("Файлът не можа да се запази");
+        }
     }
 
     private void openLinkSettings() {
@@ -161,10 +233,19 @@ public class MainActivity extends Activity {
     protected void onResume() { super.onResume(); web.onResume(); }
 
     @Override
-    protected void onPause() { web.onPause(); CookieManager.getInstance().flush(); super.onPause(); }
+    protected void onPause() {
+        if (!playing) web.onPause();   // докато свири – продължава във фонов режим
+        CookieManager.getInstance().flush();
+        super.onPause();
+    }
 
     @Override
-    protected void onDestroy() { web.destroy(); super.onDestroy(); }
+    protected void onDestroy() {
+        PlaybackService.controller = null;
+        PlaybackService.stop(this);
+        web.destroy();
+        super.onDestroy();
+    }
 
     @SuppressWarnings("deprecation")
     @Override
