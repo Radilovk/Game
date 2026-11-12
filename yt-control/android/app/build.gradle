@@ -1,0 +1,47 @@
+plugins { id 'com.android.application' }
+
+// Подписване: ключът НЕ е в хранилището. Подава се чрез keystore.properties или променливи на средата.
+def ksProps = new Properties()
+def ksFile = rootProject.file('keystore.properties')
+if (ksFile.exists()) ksFile.withInputStream { ksProps.load(it) }
+def ksPath = ksProps['storeFile'] ?: System.getenv('YTC_KEYSTORE')
+def ksPass = ksProps['storePassword'] ?: System.getenv('YTC_KEYSTORE_PASSWORD')
+def ksAlias = ksProps['keyAlias'] ?: (System.getenv('YTC_KEY_ALIAS') ?: 'ytcontrol')
+
+android {
+    namespace 'com.ytcontrol.app'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'com.ytcontrol.app'
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName '1.0.0'
+    }
+    signingConfigs {
+        release {
+            if (ksPath) {
+                storeFile file(ksPath)
+                storePassword ksPass
+                keyAlias ksAlias
+                keyPassword ksPass
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt')
+            if (ksPath) signingConfig signingConfigs.release
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.webkit:webkit:1.12.1'
+}
