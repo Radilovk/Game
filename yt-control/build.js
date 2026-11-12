@@ -22,4 +22,8 @@ const header = `// ==UserScript==
 const body = ['schema.js', 'hook.js', 'dom.js', 'ui.js', 'boot.js'].map(read).join('\n');
 fs.mkdirSync(path.join(__dirname, 'dist'), { recursive: true });
 fs.writeFileSync(path.join(__dirname, 'dist', 'yt-control.user.js'), header + '\n' + body);
+// същият модул се вгражда и в Android приложението
+const assets = path.join(__dirname, 'android', 'app', 'src', 'main', 'assets');
+fs.mkdirSync(assets, { recursive: true });
+fs.copyFileSync(path.join(__dirname, 'dist', 'yt-control.user.js'), path.join(assets, 'yt-control.user.js'));
 console.log('OK v' + version);

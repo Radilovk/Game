@@ -1,7 +1,7 @@
 # 🛡️ YT Контрол: мобилен блокер на Shorts и реклами
 
-Работи в **мобилния YouTube (m.youtube.com)** на **iPhone (Safari)** и **Android (Firefox)**, с твоя профил, абонаменти и история.
-Инсталира се като един файл: [`dist/yt-control.user.js`](dist/yt-control.user.js).
+- **Android:** самостоятелно приложение [`dist/yt-control.apk`](dist/yt-control.apk) с вграден модул.
+- **iPhone:** модул за Safari [`dist/yt-control.user.js`](dist/yt-control.user.js) (чрез приложението Userscripts), с твоя профил.
 
 **👉 Страница за инсталиране (стъпка по стъпка, разпознава телефона):** https://radilovk.github.io/Game/yt-control/
 
@@ -48,18 +48,38 @@ m.youtube.com не идва като готова страница. Браузъ
 > На iPad Safari по подразбиране отваря десктоп версията. Натисни **ⓐA → „Заявка за мобилен уебсайт“**.
 > За усещане на приложение: добави m.youtube.com в **Любими** на Safari. Иконата на началния екран („Добави към начален екран“) отваря отделен прозорец, в който разширенията на Safari може да не работят.
 
-## 🤖 Android
+## 🤖 Android: приложение (APK)
 
-1. Инсталирай **Firefox** от Google Play (Chrome на Android не поддържа добавки).
-2. Firefox → **⋮ → Добавки** → **Tampermonkey**.
-3. Отвори [`yt-control.user.js`](dist/yt-control.user.js) → **Raw** → Tampermonkey предлага **Инсталиране**.
-4. Отвори **m.youtube.com**. По желание: ⋮ → „Добавяне към началния екран“.
+1. Изтегли [`yt-control.apk`](dist/yt-control.apk) от страницата за инсталиране.
+2. Отвори файла → разреши „инсталиране от този източник“ → **Инсталиране**.
+3. Отвори **YT Контрол** (червеният щит).
 
-## ❓ Защо не е отделно APK / iOS приложение
+Какво прави приложението, освен модула:
+- вкарва модула в страницата от системата (`addDocumentStartJavaScript`), **преди** кода на YouTube и независимо от CSP, затова винаги е 🟢 „Пълна защита“;
+- спира рекламните заявки и на **мрежово ниво** (doubleclick, googlesyndication, `/pagead/`, `/api/stats/ads`, `/ptracking` и др.);
+- блокира Shorts адреси, опити за отваряне на официалното приложение YouTube и външни линкове (те се отварят в браузъра);
+- видео на цял екран, бутон „назад“, екран при липса на интернет;
+- отваря споделени линкове към YouTube (youtube.com, youtu.be);
+- **сам обновява модула** от `radilovk.github.io/Game/yt-control/dist/yt-control.user.js`, като новата версия важи при следващото отваряне.
 
-- Официалното приложение YouTube е затворено: нищо отвън не може да промени какво показва.
-- Собствено приложение с вграден браузър (WebView) **не позволява вход с Google профил** (Google го блокира), а приложение за iPhone извън App Store не може да се инсталира нормално.
-- Мобилният сайт в Safari или Firefox получава същите данни като приложението, но тук кодът може да ги контролира. Това е по-мощният вариант.
+> Вход с Google профил не е възможен: Google го блокира във всички приложения с вграден браузър. Ако ти трябва профилът, използвай Firefox + Tampermonkey + `yt-control.user.js`.
+
+### Сглобяване на APK
+
+```bash
+cd android
+# keystore.properties (не е в хранилището):
+#   storeFile=/път/до/ytcontrol-release.keystore
+#   storePassword=...
+#   keyAlias=ytcontrol
+ANDROID_HOME=/път/до/android-sdk ./gradlew assembleRelease
+cp app/build/outputs/apk/release/app-release.apk ../dist/yt-control.apk
+```
+Всяко обновление на приложението **трябва да е подписано със същия ключ**, иначе Android няма да го инсталира върху старото.
+
+## ❓ Защо за iPhone няма приложение
+
+iPhone не позволява инсталиране от файл. Приложение може да дойде само от App Store, а Apple не одобрява приложения, които махат рекламите на YouTube. Модулът в Safari дава същата защита и пази профила ти.
 
 ## ⚠️ Добре е да знаеш
 
@@ -75,5 +95,6 @@ src/hook.js     слой „данни“ (изпълнява се в стран
 src/dom.js      слой „DOM“: CSS, блокиране на /shorts адреси, пропускане на реклами
 src/ui.js       интерфейс в стил приложение (bottom sheet)
 src/boot.js     старт: вмъкване на hook през CSP nonce + Trusted Types
+android/        Android приложение (WebView + вграден модул)
 ```
-`node build.js` сглобява `dist/yt-control.user.js`.
+`node build.js` сглобява `dist/yt-control.user.js` и го копира в `android/app/src/main/assets/`.
