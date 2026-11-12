@@ -50,6 +50,10 @@
   .foot{display:flex;justify-content:space-between;align-items:center;margin-top:18px;color:#636366;font-size:12px}
   .foot button{border:0;background:none;color:#0a84ff;font:inherit;font-size:14px;padding:6px 0}
   .disabled .card{opacity:.5}
+  .toast{position:fixed;left:50%;top:calc(64px + env(safe-area-inset-top));transform:translate(-50%,-20px);opacity:0;
+    background:rgba(28,28,30,.96);color:#fff;padding:10px 16px;border-radius:20px;font:600 14px -apple-system,Roboto,sans-serif;
+    box-shadow:0 4px 16px rgba(0,0,0,.4);transition:all .25s;z-index:2147483647;pointer-events:none;white-space:nowrap}
+  .toast.on{opacity:1;transform:translate(-50%,0)}
   `;
 
   function el(tag, cls, text) {
@@ -231,6 +235,21 @@
       setTimeout(() => w.remove(), 300);
     }
     YTC.openPanel = open;
+
+    let toastEl, toastTimer;
+    YTC.toast = function (msg) {
+      mount();
+      if (!root) return;
+      if (!toastEl) { toastEl = el('div', 'toast'); root.appendChild(toastEl); }
+      toastEl.textContent = '🚫 ' + msg;
+      requestAnimationFrame(() => toastEl.classList.add('on'));
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toastEl.classList.remove('on'), 1800);
+    };
+    const pendingToast = () => {
+      try { if (sessionStorage.getItem('ytc-toast')) { sessionStorage.removeItem('ytc-toast'); setTimeout(() => YTC.toast('Shorts е блокиран'), 600); } } catch (e) { /* */ }
+    };
+    if (document.body) pendingToast(); else document.addEventListener('DOMContentLoaded', pendingToast);
 
     // Задържане върху логото на YouTube (или двоен тап на бутона) отваря панела – работи и при скрит бутон
     let pressTimer = 0;

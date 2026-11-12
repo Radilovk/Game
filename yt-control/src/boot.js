@@ -39,6 +39,14 @@
     document.addEventListener('DOMContentLoaded', () => { mo.disconnect(); inject(findNonce()); });
   }
 
+  // Опит за отваряне на Short е спрян в страницата. Ако YouTube все пак е почнал да рисува плейъра – връщаме страницата.
+  document.addEventListener('ytc-shorts-blocked', () => {
+    if (YTC.toast) YTC.toast('Shorts е блокиран');
+    setTimeout(() => {
+      if (document.querySelector('ytm-shorts-player, ytm-reel-watch-player, shorts-video, ytm-reel-player-overlay-renderer')) location.reload();
+    }, 400);
+  });
+
   // ---- 2) Слой "DOM" + интерфейс ----
   let S = YTC.load();
   YTC.domStart(S);

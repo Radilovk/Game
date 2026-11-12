@@ -63,6 +63,7 @@
       if (S.blockShorts && (ep.reelWatchEndpoint || /^\/shorts\//.test(urlOf(ep)))) return 'shorts';
       if (S.hideMixes && ep.watchEndpoint && /^RD/.test(ep.watchEndpoint.playlistId || '')) return 'filtered';
       const overlays = Array.isArray(v.thumbnailOverlays) ? v.thumbnailOverlays : [];
+      if (S.blockShorts && overlays.some((o) => o.thumbnailOverlayTimeStatusRenderer && o.thumbnailOverlayTimeStatusRenderer.style === 'SHORTS')) return 'shorts';
       if (S.hideLive) {
         const live = overlays.some((o) => o.thumbnailOverlayTimeStatusRenderer && o.thumbnailOverlayTimeStatusRenderer.style === 'LIVE') ||
           (Array.isArray(v.badges) && v.badges.some((b) => b.metadataBadgeRenderer && /LIVE/.test(b.metadataBadgeRenderer.style || '')));
@@ -153,6 +154,21 @@
       } catch (e) { /* никога не чупим страницата */ }
       return obj;
     }
+
+    // 0) YouTube е SPA: при докосване на Short сменя адреса с history.pushState. Спираме това още тук.
+    try {
+      for (const fn of ['pushState', 'replaceState']) {
+        const orig = history[fn];
+        history[fn] = function (state, title, url) {
+          if (S.enabled && S.blockShorts && url && /^\/shorts(\/|$)/.test(new URL(String(url), location.href).pathname)) {
+            stats.shorts++;
+            document.dispatchEvent(new CustomEvent('ytc-shorts-blocked'));
+            return undefined;
+          }
+          return orig.apply(this, arguments);
+        };
+      }
+    } catch (e) { /* */ }
 
     // 1) JSON.parse – основният път на m.youtube.com
     const hookedParse = function parse(text, reviver) {

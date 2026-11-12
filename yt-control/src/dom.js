@@ -42,6 +42,7 @@
   function buildCSS() {
     if (!S.enabled) return '';
     const r = ['[data-ytc-hidden]{display:none!important}'];
+    if (S.blockShorts) r.push('html.ytc-shorts-page body{visibility:hidden!important}', 'ytm-shorts-player, ytm-reel-watch-player, ytm-reel-player-overlay-renderer, shorts-video{display:none!important}');
     for (const k in CSS) if (S[k]) for (const sel of CSS[k]) r.push(sel + '{display:none!important}');
     if (S.hideHomeFeed) for (const sel of HOME_CSS) r.push('html.ytc-home ' + sel + '{display:none!important}');
     return r.join('\n'); // всяко правило отделно – непознат селектор не чупи останалите
@@ -59,12 +60,12 @@
     if (!S.enabled || !S.blockShorts) return false;
     const p = location.pathname;
     const m = p.match(/^\/shorts\/([\w-]{5,})/);
-    if (m) {
-      document.querySelectorAll('video').forEach((v) => { try { v.pause(); } catch (e) { /* */ } });
-      location.replace(S.redirectShorts ? '/watch?v=' + m[1] : '/');
+    if (m || /^\/shorts\/?$/.test(p)) {
+      document.querySelectorAll('video').forEach((v) => { try { v.muted = true; v.pause(); v.removeAttribute('src'); v.load(); } catch (e) { /* */ } });
+      try { sessionStorage.setItem('ytc-toast', '1'); } catch (e) { /* */ }
+      location.replace('/');
       return true;
     }
-    if (/^\/shorts\/?$/.test(p)) { location.replace('/'); return true; }
     const ch = p.match(/^(\/(?:@[^/]+|channel\/[^/]+|c\/[^/]+|user\/[^/]+))\/shorts\/?$/);
     if (ch) { location.replace(ch[1] + '/videos'); return true; }
     return false;
@@ -77,7 +78,7 @@
     const m = href.match(/\/shorts\/([\w-]{5,})/);
     if (!m && !/\/shorts\/?$/.test(href)) return;
     e.preventDefault(); e.stopImmediatePropagation();
-    if (m && S.redirectShorts) location.href = '/watch?v=' + m[1];
+    YTC.toast && YTC.toast('Shorts е блокиран');
   }
 
   // ---------- Филтри по DOM (за случая, в който слоят "данни" не е активен) ----------
@@ -125,6 +126,7 @@
     if (!document.documentElement) return;
     applyCSS();
     if (!S.enabled) return;
+    document.documentElement.classList.toggle('ytc-shorts-page', !!S.blockShorts && /^\/shorts(\/|$)/.test(location.pathname));
     if (location.href !== lastHref) { lastHref = location.href; if (checkUrl()) return; }
     document.documentElement.classList.toggle('ytc-home', location.pathname === '/');
     domFilter();
@@ -164,7 +166,7 @@
     ['state-navigateend', 'yt-navigate-finish', 'popstate'].forEach((ev) => window.addEventListener(ev, schedule, true));
     new MutationObserver(schedule).observe(document, { childList: true, subtree: true });
     setInterval(adTick, 250);
-    setInterval(() => { if (location.href !== lastHref) schedule(); }, 800);
+    setInterval(() => { if (location.href !== lastHref) pass(); }, 250);
     schedule();
   };
 })();

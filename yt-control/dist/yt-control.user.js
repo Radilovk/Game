@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YT Контрол – блокер на Shorts и реклами (мобилен)
 // @namespace    yt-control
-// @version      2.0.0
+// @version      2.1.0
 // @description  Изрязва Shorts и рекламите от данните на m.youtube.com, преди да се покажат. Филтри по думи и канали, фокус режим.
 // @match        https://m.youtube.com/*
 // @run-at       document-start
@@ -14,13 +14,12 @@
 (function () {
   'use strict';
   const YTC = (globalThis.YTC = globalThis.YTC || {});
-  YTC.VERSION = '2.0.0';
+  YTC.VERSION = '2.1.0';
   YTC.KEY = 'ytc-settings';
 
   YTC.SCHEMA = [
     { group: 'Shorts' },
-    { key: 'blockShorts', label: 'Блокирай Shorts напълно', hint: 'Рафтове, бутон в долната лента, табове в каналите, отделни клипове', def: true },
-    { key: 'redirectShorts', label: 'Линк към Short → нормално видео', hint: 'Иначе те връща в началото', def: true },
+    { key: 'blockShorts', label: 'Блокирай Shorts напълно', hint: 'Изчезват навсякъде. Линк към Short не се отваря изобщо.', def: true },
 
     { group: 'Реклами' },
     { key: 'hideAds', label: 'Премахвай рекламите от данните', hint: 'Видео реклами, банери, спонсорирани карти', def: true },
@@ -136,6 +135,7 @@
       if (S.blockShorts && (ep.reelWatchEndpoint || /^\/shorts\//.test(urlOf(ep)))) return 'shorts';
       if (S.hideMixes && ep.watchEndpoint && /^RD/.test(ep.watchEndpoint.playlistId || '')) return 'filtered';
       const overlays = Array.isArray(v.thumbnailOverlays) ? v.thumbnailOverlays : [];
+      if (S.blockShorts && overlays.some((o) => o.thumbnailOverlayTimeStatusRenderer && o.thumbnailOverlayTimeStatusRenderer.style === 'SHORTS')) return 'shorts';
       if (S.hideLive) {
         const live = overlays.some((o) => o.thumbnailOverlayTimeStatusRenderer && o.thumbnailOverlayTimeStatusRenderer.style === 'LIVE') ||
           (Array.isArray(v.badges) && v.badges.some((b) => b.metadataBadgeRenderer && /LIVE/.test(b.metadataBadgeRenderer.style || '')));
@@ -227,6 +227,21 @@
       return obj;
     }
 
+    // 0) YouTube е SPA: при докосване на Short сменя адреса с history.pushState. Спираме това още тук.
+    try {
+      for (const fn of ['pushState', 'replaceState']) {
+        const orig = history[fn];
+        history[fn] = function (state, title, url) {
+          if (S.enabled && S.blockShorts && url && /^\/shorts(\/|$)/.test(new URL(String(url), location.href).pathname)) {
+            stats.shorts++;
+            document.dispatchEvent(new CustomEvent('ytc-shorts-blocked'));
+            return undefined;
+          }
+          return orig.apply(this, arguments);
+        };
+      }
+    } catch (e) { /* */ }
+
     // 1) JSON.parse – основният път на m.youtube.com
     const hookedParse = function parse(text, reviver) {
       const r = origParse.apply(this, arguments);
@@ -308,6 +323,7 @@
   function buildCSS() {
     if (!S.enabled) return '';
     const r = ['[data-ytc-hidden]{display:none!important}'];
+    if (S.blockShorts) r.push('html.ytc-shorts-page body{visibility:hidden!important}', 'ytm-shorts-player, ytm-reel-watch-player, ytm-reel-player-overlay-renderer, shorts-video{display:none!important}');
     for (const k in CSS) if (S[k]) for (const sel of CSS[k]) r.push(sel + '{display:none!important}');
     if (S.hideHomeFeed) for (const sel of HOME_CSS) r.push('html.ytc-home ' + sel + '{display:none!important}');
     return r.join('\n'); // всяко правило отделно – непознат селектор не чупи останалите
@@ -325,12 +341,12 @@
     if (!S.enabled || !S.blockShorts) return false;
     const p = location.pathname;
     const m = p.match(/^\/shorts\/([\w-]{5,})/);
-    if (m) {
-      document.querySelectorAll('video').forEach((v) => { try { v.pause(); } catch (e) { /* */ } });
-      location.replace(S.redirectShorts ? '/watch?v=' + m[1] : '/');
+    if (m || /^\/shorts\/?$/.test(p)) {
+      document.querySelectorAll('video').forEach((v) => { try { v.muted = true; v.pause(); v.removeAttribute('src'); v.load(); } catch (e) { /* */ } });
+      try { sessionStorage.setItem('ytc-toast', '1'); } catch (e) { /* */ }
+      location.replace('/');
       return true;
     }
-    if (/^\/shorts\/?$/.test(p)) { location.replace('/'); return true; }
     const ch = p.match(/^(\/(?:@[^/]+|channel\/[^/]+|c\/[^/]+|user\/[^/]+))\/shorts\/?$/);
     if (ch) { location.replace(ch[1] + '/videos'); return true; }
     return false;
@@ -343,7 +359,7 @@
     const m = href.match(/\/shorts\/([\w-]{5,})/);
     if (!m && !/\/shorts\/?$/.test(href)) return;
     e.preventDefault(); e.stopImmediatePropagation();
-    if (m && S.redirectShorts) location.href = '/watch?v=' + m[1];
+    YTC.toast && YTC.toast('Shorts е блокиран');
   }
 
   // ---------- Филтри по DOM (за случая, в който слоят "данни" не е активен) ----------
@@ -391,6 +407,7 @@
     if (!document.documentElement) return;
     applyCSS();
     if (!S.enabled) return;
+    document.documentElement.classList.toggle('ytc-shorts-page', !!S.blockShorts && /^\/shorts(\/|$)/.test(location.pathname));
     if (location.href !== lastHref) { lastHref = location.href; if (checkUrl()) return; }
     document.documentElement.classList.toggle('ytc-home', location.pathname === '/');
     domFilter();
@@ -430,7 +447,7 @@
     ['state-navigateend', 'yt-navigate-finish', 'popstate'].forEach((ev) => window.addEventListener(ev, schedule, true));
     new MutationObserver(schedule).observe(document, { childList: true, subtree: true });
     setInterval(adTick, 250);
-    setInterval(() => { if (location.href !== lastHref) schedule(); }, 800);
+    setInterval(() => { if (location.href !== lastHref) pass(); }, 250);
     schedule();
   };
 })();
@@ -487,6 +504,10 @@
   .foot{display:flex;justify-content:space-between;align-items:center;margin-top:18px;color:#636366;font-size:12px}
   .foot button{border:0;background:none;color:#0a84ff;font:inherit;font-size:14px;padding:6px 0}
   .disabled .card{opacity:.5}
+  .toast{position:fixed;left:50%;top:calc(64px + env(safe-area-inset-top));transform:translate(-50%,-20px);opacity:0;
+    background:rgba(28,28,30,.96);color:#fff;padding:10px 16px;border-radius:20px;font:600 14px -apple-system,Roboto,sans-serif;
+    box-shadow:0 4px 16px rgba(0,0,0,.4);transition:all .25s;z-index:2147483647;pointer-events:none;white-space:nowrap}
+  .toast.on{opacity:1;transform:translate(-50%,0)}
   `;
 
   function el(tag, cls, text) {
@@ -669,6 +690,21 @@
     }
     YTC.openPanel = open;
 
+    let toastEl, toastTimer;
+    YTC.toast = function (msg) {
+      mount();
+      if (!root) return;
+      if (!toastEl) { toastEl = el('div', 'toast'); root.appendChild(toastEl); }
+      toastEl.textContent = '🚫 ' + msg;
+      requestAnimationFrame(() => toastEl.classList.add('on'));
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toastEl.classList.remove('on'), 1800);
+    };
+    const pendingToast = () => {
+      try { if (sessionStorage.getItem('ytc-toast')) { sessionStorage.removeItem('ytc-toast'); setTimeout(() => YTC.toast('Shorts е блокиран'), 600); } } catch (e) { /* */ }
+    };
+    if (document.body) pendingToast(); else document.addEventListener('DOMContentLoaded', pendingToast);
+
     // Задържане върху логото на YouTube (или двоен тап на бутона) отваря панела – работи и при скрит бутон
     let pressTimer = 0;
     document.addEventListener('touchstart', (e) => {
@@ -726,6 +762,14 @@
     mo.observe(document, { childList: true, subtree: true });
     document.addEventListener('DOMContentLoaded', () => { mo.disconnect(); inject(findNonce()); });
   }
+
+  // Опит за отваряне на Short е спрян в страницата. Ако YouTube все пак е почнал да рисува плейъра – връщаме страницата.
+  document.addEventListener('ytc-shorts-blocked', () => {
+    if (YTC.toast) YTC.toast('Shorts е блокиран');
+    setTimeout(() => {
+      if (document.querySelector('ytm-shorts-player, ytm-reel-watch-player, shorts-video, ytm-reel-player-overlay-renderer')) location.reload();
+    }, 400);
+  });
 
   // ---- 2) Слой "DOM" + интерфейс ----
   let S = YTC.load();

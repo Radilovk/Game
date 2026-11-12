@@ -2,13 +2,12 @@
 (function () {
   'use strict';
   const YTC = (globalThis.YTC = globalThis.YTC || {});
-  YTC.VERSION = '2.0.0';
+  YTC.VERSION = '2.1.0';
   YTC.KEY = 'ytc-settings';
 
   YTC.SCHEMA = [
     { group: 'Shorts' },
-    { key: 'blockShorts', label: 'Блокирай Shorts напълно', hint: 'Рафтове, бутон в долната лента, табове в каналите, отделни клипове', def: true },
-    { key: 'redirectShorts', label: 'Линк към Short → нормално видео', hint: 'Иначе те връща в началото', def: true },
+    { key: 'blockShorts', label: 'Блокирай Shorts напълно', hint: 'Изчезват навсякъде. Линк към Short не се отваря изобщо.', def: true },
 
     { group: 'Реклами' },
     { key: 'hideAds', label: 'Премахвай рекламите от данните', hint: 'Видео реклами, банери, спонсорирани карти', def: true },
