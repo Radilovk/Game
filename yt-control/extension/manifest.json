@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "YouTube Контрол – блокер на Shorts и реклами",
+  "short_name": "YT Контрол",
+  "version": "1.0.0",
+  "description": "Пълно блокиране на Shorts, скриване и пропускане на реклами, филтри по думи и канали, фокус режим.",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "*://www.youtube.com/*",
+    "*://m.youtube.com/*",
+    "*://youtube.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "*://www.youtube.com/*",
+        "*://m.youtube.com/*",
+        "*://youtube.com/*"
+      ],
+      "js": [
+        "schema.js",
+        "ui.js",
+        "core.js",
+        "adapter-ext.js"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_title": "YouTube Контрол",
+    "default_popup": "popup.html"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "yt-control@local",
+      "strict_min_version": "121.0"
+    },
+    "gecko_android": {
+      "strict_min_version": "121.0"
+    }
+  }
+}

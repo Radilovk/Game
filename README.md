@@ -1,5 +1,7 @@
 # 🎮 Game Collection
 
+> 🛡️ **Ново:** [YouTube Контрол](yt-control/): блокер на Shorts, реклами и нежелано съдържание (iPhone, Android, компютър).
+
 This repository contains two fun and interactive HTML games:
 
 ## 🏋️ Exercise Challenge Game (`exercise_game.html`)
