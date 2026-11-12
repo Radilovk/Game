@@ -119,12 +119,34 @@
     }
   }
 
+  // ======================================================== Глави
+  let chapters = [], chaptersFor = null;
+  async function loadChapters(id) {
+    chapters = []; chaptersFor = id;
+    if (!YTC.webNext) return;
+    const r = await YTC.webNext(id);
+    if (chaptersFor !== id || !r) return;
+    let mm = null;
+    const walk = (o, d) => { if (mm || !o || typeof o !== 'object' || d > 25) return; if (o.multiMarkersPlayerBarRenderer) { mm = o.multiMarkersPlayerBarRenderer; return; } for (const k in o) walk(o[k], d + 1); };
+    walk(r.playerOverlays || r, 0);
+    const maps = (mm && mm.markersMap) || [];
+    const m = maps.find((x) => /CHAPTERS/.test(x.key || '')) || maps[0];
+    const list = (m && m.value && m.value.chapters) || [];
+    chapters = list.map((c) => c.chapterRenderer).filter(Boolean).map((c) => ({
+      title: (c.title && (c.title.simpleText || (c.title.runs || []).map((x) => x.text).join(''))) || '',
+      start: (c.timeRangeStartMillis || 0) / 1000,
+    }));
+    updateButton();
+  }
+  function chapterAt(t) { let c = -1; for (let i = 0; i < chapters.length; i++) if (t >= chapters[i].start - 0.5) c = i; return c; }
+
   // ======================================================== Основен цикъл за текущото видео
   let curId = null, resumed = new Set(), speedSet = new Set(), lastSave = 0, invalidated = new Set();
   function onNewVideo(id) {
     curId = id;
     loopOn = false;
     loadSponsor(id);
+    setTimeout(() => { if (curId === id) loadChapters(id); }, 1200); // след старта на видеото
   }
   function tick() {
     if (!S.enabled) return;
@@ -166,9 +188,11 @@
       const done = v.currentTime > v.duration - 20;
       history.upsert({ id, title: pageTitle(), channel: pageChannel(), len: Math.round(v.duration), pos: done ? 0 : Math.round(v.currentTime), done, t: Date.now() });
       if (!invalidated.has(id)) { invalidated.add(id); LS.set('ytc-feed', null); } // предложенията се опресняват с новото
+      if (done && YTC.later && YTC.later.has(id)) YTC.later.remove(id); // изгледано → махаме от „По-късно“
     }
   }
   YTC.toolsTick = tick;
+  setInterval(() => { if (chapters.length) updateButton(); }, 2000);
   setInterval(tick, 1000);
   document.addEventListener('timeupdate', () => { const v = video(); if (v && !inAd() && sb.segs.length) checkSponsor(v); }, true);
   document.addEventListener('ratechange', () => updateButton(), true);
@@ -197,6 +221,13 @@
   .sw i:after{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;transition:transform .2s}
   .sw input:checked+i{background:#30d158}.sw input:checked+i:after{transform:translateX(20px)}
   .info{margin:12px 4px 0;color:#8e8e93;font-size:13px}
+  .acts{display:flex;gap:8px;margin-bottom:4px}
+  .a{flex:1;border:0;border-radius:12px;background:#2c2c2e;color:#f2f2f7;font:600 14px inherit;padding:12px 6px}
+  .a.on{background:#30d158;color:#000}
+  .ch{display:flex;gap:10px;align-items:baseline;width:100%;border:0;background:#2c2c2e;color:#f2f2f7;font:14px inherit;text-align:left;padding:11px 12px;border-radius:10px;margin-top:6px}
+  .ch b{flex:0 0 auto;color:#0a84ff;font-weight:600;min-width:46px}
+  .ch.cur{background:#3a3a3c;box-shadow:inset 3px 0 0 #ff0033}
+  .nav{display:flex;gap:8px;margin-top:6px}.nav .a{padding:10px}
   `;
   const speedLabel = (r) => (Math.round(r * 100) / 100) + '×';
   function mountButton() {
@@ -225,6 +256,7 @@
     if (sleep.mode === 'min') t = '⏾ ' + Math.max(1, Math.ceil((sleep.until - Date.now()) / 60e3)) + '′ · ' + t;
     else if (sleep.mode === 'end') t = '⏾ · ' + t;
     if (loopOn) t = '🔁 ' + t;
+    if (chapters.length && v) { const i = chapterAt(v.currentTime); if (i >= 0) t = '§' + (i + 1) + ' · ' + t; }
     b.textContent = t;
     b.classList.toggle('act', sleep.mode !== 'off' || loopOn || Math.abs((live || 1) - 1) > 0.01);
   }
@@ -241,6 +273,50 @@
     const close = () => { back.remove(); sh.remove(); };
     back.addEventListener('click', close);
     sh.appendChild(el('h3', null, 'Инструменти'));
+
+    // бързи действия: По-късно / Следвай канала
+    const acts = el('div', 'acts');
+    const lb = el('button', 'a', '');
+    const setL = () => { const on = YTC.later && YTC.later.has(curId); lb.textContent = on ? '✓ В „По-късно“' : '⏱ Гледай по-късно'; lb.classList.toggle('on', !!on); };
+    setL();
+    lb.addEventListener('click', () => {
+      if (!YTC.later) return;
+      if (YTC.later.has(curId)) YTC.later.remove(curId);
+      else YTC.later.add({ id: curId, title: pageTitle(), channel: pageChannel(), dur: video() && isFinite(video().duration) ? fmt(video().duration) : '' });
+      setL();
+    });
+    acts.appendChild(lb);
+    const fb = el('button', 'a', '📺 Следвай канала');
+    acts.appendChild(fb);
+    if (YTC.videoOwner && YTC.subs) {
+      YTC.videoOwner(curId).then((o) => {
+        if (!o) { fb.style.display = 'none'; return; }
+        const setF = () => { const on = YTC.subs.has(o.id); fb.textContent = on ? '✓ Следваш ' + o.name : '📺 Следвай ' + o.name; fb.classList.toggle('on', on); };
+        setF();
+        fb.onclick = () => { if (YTC.subs.has(o.id)) YTC.subs.remove(o.id); else YTC.subs.add(o); setF(); };
+      });
+    } else fb.style.display = 'none';
+    sh.appendChild(acts);
+
+    // глави
+    if (chapters.length) {
+      sh.appendChild(el('div', 'lbl', 'Глави (' + chapters.length + ')'));
+      const v0 = video();
+      const ci = v0 ? chapterAt(v0.currentTime) : -1;
+      const nav = el('div', 'nav');
+      const prev = el('button', 'a', '⏮ Предишна'), next = el('button', 'a', 'Следваща ⏭');
+      prev.addEventListener('click', () => { const v = video(); if (!v) return; const i = chapterAt(v.currentTime); const tgt = v.currentTime - chapters[Math.max(0, i)].start > 3 ? i : i - 1; v.currentTime = chapters[Math.max(0, tgt)].start; close(); });
+      next.addEventListener('click', () => { const v = video(); if (!v) return; const i = chapterAt(v.currentTime); if (i + 1 < chapters.length) v.currentTime = chapters[i + 1].start; close(); });
+      nav.appendChild(prev); nav.appendChild(next);
+      sh.appendChild(nav);
+      chapters.forEach((c, i) => {
+        const b = el('button', 'ch' + (i === ci ? ' cur' : ''));
+        b.appendChild(el('b', null, fmt(c.start)));
+        b.appendChild(el('span', null, c.title));
+        b.addEventListener('click', () => { const v = video(); if (v) { v.currentTime = c.start; if (v.paused) v.play().catch(() => {}); } close(); });
+        sh.appendChild(b);
+      });
+    }
 
     sh.appendChild(el('div', 'lbl', 'Скорост'));
     const g = el('div', 'grid');

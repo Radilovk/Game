@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const YTC = (globalThis.YTC = globalThis.YTC || {});
-  YTC.VERSION = '3.1.0';
+  YTC.VERSION = '3.2.0';
   YTC.KEY = 'ytc-settings';
 
   YTC.SCHEMA = [
@@ -17,6 +17,7 @@
     { key: 'saveHistory', label: 'Пази история на гледане', hint: 'Само на това устройство. Виж „История“ на началната страница', def: true },
     { key: 'toolsButton', label: 'Бутон „Инструменти“ при гледане', hint: 'Скорост, таймер за сън, повторение', def: true },
     { key: 'sponsorBlock', label: 'Прескачай спонсорските части в клиповете', hint: 'Данни от общността SponsorBlock. Изпраща се само част от хеша на видеото', def: true },
+    { key: 'pip', label: 'Картина в картината (Android)', hint: 'При излизане от приложението видеото продължава в малко прозорче', def: true },
     { key: 'backgroundPlay', label: 'Слушане във фонов режим', hint: 'Продължава при заключен екран и в други приложения', def: true },
     { key: 'showDates', label: 'Дата на качване навсякъде', hint: 'Добавя датата и в препоръките под видеото', def: true },
     { key: 'captionsButton', label: 'Бутон за изтегляне на надписи', hint: 'Бутон „CC“ при гледане на видео', def: true },

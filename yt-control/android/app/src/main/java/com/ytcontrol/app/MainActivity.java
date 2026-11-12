@@ -171,12 +171,17 @@ public class MainActivity extends Activity {
             onYouTube(() -> {
                 playing = isPlaying;
                 if (isPlaying) { askNotificationPermission(); web.setKeepVisible(true); }
+                updatePip();
                 if (isPlaying || serviceStarted) {
                     serviceStarted = true;
                     PlaybackService.update(MainActivity.this, isPlaying, title, artist);
                 }
             });
         }
+
+        /** Включва/изключва „картина в картината“ (настройка в панела 🛡). */
+        @android.webkit.JavascriptInterface
+        public void setPip(boolean on) { onYouTube(() -> { pipEnabled = on; updatePip(); }); }
 
         /** Запазва файл (напр. надписи) в „Изтегляния/YT Kontrol“. */
         @android.webkit.JavascriptInterface
@@ -185,7 +190,60 @@ public class MainActivity extends Activity {
         }
     }
 
-    private boolean playing = false, serviceStarted = false;
+    private boolean playing = false, serviceStarted = false, pipEnabled = true, leftPip = false, stopped = false;
+
+    // ---------------------------------------------------------------- картина в картината
+    private android.app.PictureInPictureParams pipParams() {
+        int fl = android.app.PendingIntent.FLAG_UPDATE_CURRENT | android.app.PendingIntent.FLAG_IMMUTABLE;
+        android.app.PendingIntent toggle = android.app.PendingIntent.getService(this, 5,
+                new Intent(this, PlaybackService.class).setAction(PlaybackService.ACTION_TOGGLE), fl);
+        android.app.RemoteAction act = new android.app.RemoteAction(
+                android.graphics.drawable.Icon.createWithResource(this, playing ? android.R.drawable.ic_media_pause : android.R.drawable.ic_media_play),
+                playing ? "Пауза" : "Пусни", playing ? "Пауза" : "Пусни", toggle);
+        android.app.PictureInPictureParams.Builder b = new android.app.PictureInPictureParams.Builder()
+                .setAspectRatio(new android.util.Rational(16, 9))
+                .setActions(java.util.Collections.singletonList(act));
+        if (android.os.Build.VERSION.SDK_INT >= 31) {
+            b.setAutoEnterEnabled(pipEnabled && playing);   // жест "начало" → видеото отива в малко прозорче
+            b.setSeamlessResizeEnabled(true);
+        }
+        return b.build();
+    }
+
+    private void updatePip() {
+        try { setPictureInPictureParams(pipParams()); } catch (Exception ignored) { }
+    }
+
+    @Override
+    protected void onUserLeaveHint() {
+        super.onUserLeaveHint();
+        // до Android 11 няма автоматично влизане – правим го ръчно, когато потребителят излиза, докато свири
+        if (android.os.Build.VERSION.SDK_INT < 31 && pipEnabled && playing && customView == null) {
+            try { enterPictureInPictureMode(pipParams()); } catch (Exception ignored) { }
+        }
+    }
+
+    @Override
+    public void onPictureInPictureModeChanged(boolean inPip, android.content.res.Configuration cfg) {
+        super.onPictureInPictureModeChanged(inPip, cfg);
+        if (inPip) web.setKeepVisible(true);
+        else if (stopped) web.evaluateJavascript("window.YTC && YTC.mediaCommand && YTC.mediaCommand('pause')", null); // затворено с ✕
+        else leftPip = true;   // ако следва onStop – прозорчето е затворено с ✕
+        web.evaluateJavascript("document.documentElement.classList.toggle('ytc-pip'," + inPip + ")", null);
+    }
+
+    @Override
+    protected void onStart() { super.onStart(); stopped = false; }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        stopped = true;
+        if (leftPip) {          // затворено малко прозорче → спираме видеото, както в YouTube
+            leftPip = false;
+            web.evaluateJavascript("window.YTC && YTC.mediaCommand && YTC.mediaCommand('pause')", null);
+        }
+    }
 
     private void onYouTube(Runnable r) {
         ui.post(() -> {
@@ -260,7 +318,7 @@ public class MainActivity extends Activity {
     }
 
     @Override
-    protected void onResume() { super.onResume(); web.onResume(); }
+    protected void onResume() { super.onResume(); leftPip = false; web.onResume(); }
 
     @Override
     protected void onPause() {
