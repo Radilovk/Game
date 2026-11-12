@@ -1,28 +1,55 @@
-/* YT Control – панел с настройки (без innerHTML, заради Trusted Types в YouTube) */
+/* YT Контрол – интерфейс в стил мобилно приложение (bottom sheet). Без innerHTML заради Trusted Types. */
 (function () {
   'use strict';
   const YTC = (globalThis.YTC = globalThis.YTC || {});
 
-  YTC.PANEL_CSS = `
-  .ytc-panel{font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#eee;background:#181818;
-    border:1px solid #333;border-radius:12px;padding:12px 14px;box-sizing:border-box;width:100%}
-  .ytc-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
-  .ytc-title{font-weight:700;font-size:16px}
-  .ytc-title small{font-weight:400;color:#888;font-size:11px;margin-left:6px}
-  .ytc-x{background:none;border:0;color:#aaa;font-size:22px;cursor:pointer;padding:0 4px}
-  .ytc-group{margin:12px 0 4px;font-weight:700;color:#ff6b6b;font-size:13px}
-  .ytc-row{display:flex;gap:10px;align-items:flex-start;padding:5px 0;cursor:pointer}
-  .ytc-row input[type=checkbox]{width:18px;height:18px;flex:0 0 auto;margin:1px 0 0;accent-color:#ff3b3b}
-  .ytc-col{display:block;padding:5px 0}
-  .ytc-col span{display:block;margin-bottom:4px}
-  .ytc-col textarea,.ytc-col input{width:100%;box-sizing:border-box;background:#0f0f0f;color:#eee;border:1px solid #444;
-    border-radius:8px;padding:6px 8px;font:13px/1.4 inherit}
-  .ytc-col textarea{min-height:64px;resize:vertical}
-  .ytc-foot{display:flex;justify-content:space-between;align-items:center;margin-top:10px;gap:8px}
-  .ytc-btn{background:#272727;color:#eee;border:1px solid #444;border-radius:8px;padding:6px 10px;cursor:pointer;font:inherit}
-  .ytc-saved{color:#6bd46b;font-size:12px;opacity:0;transition:opacity .3s}
-  .ytc-saved.on{opacity:1}
-  .ytc-off .ytc-body{opacity:.45}
+  const CSS = `
+  :host{all:initial}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  .fab{position:fixed;right:14px;bottom:calc(72px + env(safe-area-inset-bottom));width:46px;height:46px;border-radius:50%;
+    border:0;background:#ff0033;color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;
+    z-index:2147483646;opacity:.92;touch-action:manipulation}
+  .fab svg{width:24px;height:24px;fill:#fff}
+  .fab.off{background:#666}
+  .back{position:fixed;inset:0;background:rgba(0,0,0,.5);opacity:0;transition:opacity .25s;z-index:2147483646}
+  .sheet{position:fixed;left:0;right:0;bottom:0;max-height:88vh;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;
+    background:#1c1c1e;color:#f2f2f7;border-radius:18px 18px 0 0;transform:translateY(100%);transition:transform .28s cubic-bezier(.2,.8,.2,1);
+    z-index:2147483647;padding:0 16px calc(18px + env(safe-area-inset-bottom));
+    font:15px/1.35 -apple-system,BlinkMacSystemFont,"SF Pro Text",Roboto,"Segoe UI",sans-serif}
+  .open .back{opacity:1}.open .sheet{transform:translateY(0)}
+  .grab{width:38px;height:5px;border-radius:3px;background:#48484a;margin:8px auto 6px}
+  .top{display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:#1c1c1e;padding:4px 0 10px;z-index:2}
+  .ttl{font-size:20px;font-weight:700}
+  .x{border:0;background:#2c2c2e;color:#aeaeb2;width:30px;height:30px;border-radius:50%;font-size:18px;line-height:30px;padding:0}
+  .status{display:flex;gap:10px;align-items:center;background:#2c2c2e;border-radius:12px;padding:12px}
+  .dot{width:10px;height:10px;border-radius:50%;flex:0 0 auto;background:#30d158;box-shadow:0 0 8px #30d158}
+  .dot.warn{background:#ffd60a;box-shadow:0 0 8px #ffd60a}.dot.off{background:#8e8e93;box-shadow:none}
+  .status b{display:block;font-size:15px}.status small{color:#aeaeb2;font-size:12px}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+  .tile{background:#2c2c2e;border-radius:12px;padding:10px;text-align:center}
+  .tile b{display:block;font-size:20px;color:#ff453a}.tile span{font-size:11px;color:#aeaeb2}
+  .act{display:block;width:100%;margin-top:10px;border:0;border-radius:12px;padding:12px;background:#3a3a3c;color:#ff453a;font:inherit;font-weight:600}
+  .grp{margin:18px 4px 6px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#8e8e93}
+  .card{background:#2c2c2e;border-radius:12px;overflow:hidden}
+  .row{display:flex;align-items:center;gap:12px;padding:11px 14px;min-height:48px}
+  .row+.row{border-top:.5px solid #3a3a3c}
+  .lbl{flex:1}.lbl small{display:block;color:#8e8e93;font-size:12px;margin-top:1px}
+  .sw{position:relative;width:51px;height:31px;flex:0 0 auto}
+  .sw input{position:absolute;opacity:0;width:100%;height:100%;margin:0;z-index:1}
+  .sw i{position:absolute;inset:0;border-radius:16px;background:#39393d;transition:background .2s}
+  .sw i:after{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;
+    box-shadow:0 2px 4px rgba(0,0,0,.3);transition:transform .2s}
+  .sw input:checked+i{background:#30d158}.sw input:checked+i:after{transform:translateX(20px)}
+  .col{flex-direction:column;align-items:stretch}
+  textarea,input[type=number]{width:100%;margin-top:8px;background:#1c1c1e;color:#f2f2f7;border:1px solid #3a3a3c;border-radius:10px;
+    padding:10px;font:16px/1.35 inherit}
+  textarea{min-height:76px;resize:vertical}
+  .note{display:none;margin-top:12px;background:#3a2f00;color:#ffd60a;border-radius:12px;padding:10px 12px;font-size:13px;align-items:center;gap:10px}
+  .note.on{display:flex}.note span{flex:1}
+  .note button{border:0;border-radius:8px;background:#ffd60a;color:#000;font:inherit;font-weight:600;padding:6px 10px}
+  .foot{display:flex;justify-content:space-between;align-items:center;margin-top:18px;color:#636366;font-size:12px}
+  .foot button{border:0;background:none;color:#0a84ff;font:inherit;font-size:14px;padding:6px 0}
+  .disabled .card{opacity:.5}
   `;
 
   function el(tag, cls, text) {
@@ -31,86 +58,193 @@
     if (text != null) e.textContent = text;
     return e;
   }
+  function shieldIcon() {
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    const p = document.createElementNS(NS, 'path');
+    p.setAttribute('d', 'M12 2 4 5v6c0 5 3.4 9.7 8 11 4.6-1.3 8-6 8-11V5l-8-3zm-1.2 14.2-3.5-3.5 1.4-1.4 2.1 2.1 4.6-4.6 1.4 1.4-6 6z');
+    svg.appendChild(p);
+    return svg;
+  }
 
-  /**
-   * Рисува панела в `root`.
-   * @param {Element|ShadowRoot} root
-   * @param {object} settings
-   * @param {(s:object)=>void} onSave
-   * @param {{onClose?:()=>void}} [opts]
-   */
-  YTC.buildPanel = function (root, settings, onSave, opts) {
-    opts = opts || {};
-    while (root.firstChild) root.removeChild(root.firstChild);
-    const s = Object.assign({}, settings);
+  YTC.uiStart = function (getS, setS) {
+    let host, root, fab, wrap, sheet, statsEls, statusEls, note, chanBtn, statTimer;
 
-    const panel = el('div', 'ytc-panel');
-    const head = el('div', 'ytc-head');
-    const title = el('div', 'ytc-title', 'YouTube Контрол');
-    title.appendChild(el('small', null, 'v' + YTC.VERSION));
-    head.appendChild(title);
-    if (opts.onClose) {
-      const x = el('button', 'ytc-x', '×');
-      x.title = 'Затвори';
-      x.addEventListener('click', opts.onClose);
-      head.appendChild(x);
+    function mount() {
+      if (host && host.isConnected) return;
+      if (!document.body) return;
+      host = el('div'); host.id = 'ytc-app';
+      root = host.attachShadow({ mode: 'open' });
+      root.appendChild(el('style', null, CSS));
+      fab = el('button', 'fab'); fab.setAttribute('aria-label', 'YT Контрол'); fab.appendChild(shieldIcon());
+      fab.addEventListener('click', open);
+      root.appendChild(fab);
+      document.body.appendChild(host);
+      refreshFab();
     }
-    panel.appendChild(head);
+    function refreshFab() {
+      if (!fab) return;
+      const S = getS();
+      fab.style.display = S.showButton ? '' : 'none';
+      fab.classList.toggle('off', !S.enabled);
+    }
 
-    const body = el('div', 'ytc-body');
-    const saved = el('span', 'ytc-saved', '✓ Запазено');
-    let savedTimer, debounce;
-    const commit = () => {
-      panel.classList.toggle('ytc-off', !s.enabled);
-      onSave(Object.assign({}, s));
-      saved.classList.add('on');
-      clearTimeout(savedTimer);
-      savedTimer = setTimeout(() => saved.classList.remove('on'), 1200);
-    };
+    function stats() {
+      let d = {};
+      try { d = JSON.parse(document.documentElement.getAttribute('data-ytc-stats') || '{}') || {}; } catch (e) { /* */ }
+      const domHidden = document.querySelectorAll('[data-ytc-hidden="shorts"]').length;
+      return { shorts: (d.shorts || 0) + domHidden, ads: (d.ads || 0) + (YTC.domStats ? YTC.domStats.ads : 0), filtered: d.filtered || 0 };
+    }
+    function currentChannel() {
+      if (!/^\/watch/.test(location.pathname)) return null;
+      const a = document.querySelector('ytm-slim-owner-renderer a[href*="/@"], .slim-owner-icon-and-title[href*="/@"], ytm-slim-video-metadata-section-renderer a[href*="/@"]');
+      const m = a && (a.getAttribute('href') || '').match(/\/@([^/?#]+)/);
+      return m ? '@' + decodeURIComponent(m[1]) : null;
+    }
+    function updateLive() {
+      if (!statsEls) return;
+      const S = getS(), st = stats();
+      statsEls.shorts.textContent = st.shorts; statsEls.ads.textContent = st.ads; statsEls.filtered.textContent = st.filtered;
+      const deep = document.documentElement.getAttribute('data-ytc-hook') === 'on';
+      statusEls.dot.className = 'dot' + (!S.enabled ? ' off' : deep ? '' : ' warn');
+      statusEls.b.textContent = !S.enabled ? 'Защитата е изключена' : deep ? 'Пълна защита' : 'Базова защита';
+      statusEls.s.textContent = !S.enabled ? 'Включи я от най-долу' : deep
+        ? 'Рекламите и Shorts се изрязват от данните, преди да се покажат'
+        : 'Работи само скриването на страницата. Презареди, ако току-що си инсталирал.';
+      const ch = currentChannel();
+      chanBtn.style.display = ch ? '' : 'none';
+      if (ch) chanBtn.textContent = '🚫 Блокирай канала ' + ch;
+    }
 
-    for (const f of YTC.SCHEMA) {
-      if (f.group) { body.appendChild(el('div', 'ytc-group', f.group)); continue; }
-      if (f.type === 'text' || f.type === 'number') {
-        const row = el('label', 'ytc-col');
-        row.appendChild(el('span', null, f.label));
-        const input = el(f.type === 'text' ? 'textarea' : 'input');
-        if (f.type === 'number') { input.type = 'number'; input.min = '0'; input.step = '1'; }
-        input.value = String(s[f.key]);
-        input.addEventListener('input', () => {
-          s[f.key] = f.type === 'number' ? Math.max(0, Number(input.value) || 0) : input.value;
-          clearTimeout(debounce);
-          debounce = setTimeout(commit, 400);
-        });
-        row.appendChild(input);
-        body.appendChild(row);
-      } else {
-        const row = el('label', 'ytc-row');
-        const cb = el('input');
-        cb.type = 'checkbox';
-        cb.checked = !!s[f.key];
-        cb.addEventListener('change', () => { s[f.key] = cb.checked; commit(); });
-        row.appendChild(cb);
-        row.appendChild(el('span', null, f.label));
-        if (f.key === 'enabled') panel.insertBefore(row, null); else body.appendChild(row);
+    function build() {
+      const S = getS();
+      wrap = el('div', 'wrap');
+      const back = el('div', 'back'); back.addEventListener('click', close);
+      sheet = el('div', 'sheet' + (S.enabled ? '' : ' disabled'));
+      sheet.appendChild(el('div', 'grab'));
+      const top = el('div', 'top');
+      top.appendChild(el('div', 'ttl', 'YT Контрол'));
+      const x = el('button', 'x', '✕'); x.addEventListener('click', close); top.appendChild(x);
+      sheet.appendChild(top);
+
+      const status = el('div', 'status');
+      statusEls = { dot: el('div', 'dot'), b: el('b'), s: el('small') };
+      const st = el('div'); st.appendChild(statusEls.b); st.appendChild(statusEls.s);
+      status.appendChild(statusEls.dot); status.appendChild(st);
+      sheet.appendChild(status);
+
+      const grid = el('div', 'stats');
+      statsEls = {};
+      for (const [k, label] of [['shorts', 'Shorts'], ['ads', 'Реклами'], ['filtered', 'Филтрирани']]) {
+        const t = el('div', 'tile'); statsEls[k] = el('b', null, '0'); t.appendChild(statsEls[k]); t.appendChild(el('span', null, label));
+        grid.appendChild(t);
       }
+      sheet.appendChild(grid);
+
+      chanBtn = el('button', 'act');
+      chanBtn.addEventListener('click', () => {
+        const ch = currentChannel(); if (!ch) return;
+        const s = Object.assign({}, getS());
+        const list = s.blockedChannels.split('\n').map((v) => v.trim()).filter(Boolean);
+        if (!list.map((v) => v.toLowerCase()).includes(ch.toLowerCase())) list.push(ch);
+        s.blockedChannels = list.join('\n');
+        commit(s, true);
+        rebuild();
+      });
+      sheet.appendChild(chanBtn);
+
+      note = el('div', 'note');
+      note.appendChild(el('span', null, 'Някои промени важат напълно след презареждане.'));
+      const rl = el('button', null, 'Презареди'); rl.addEventListener('click', () => location.reload());
+      note.appendChild(rl);
+      sheet.appendChild(note);
+
+      let card = null, debounce;
+      for (const f of YTC.SCHEMA) {
+        if (f.group) { sheet.appendChild(el('div', 'grp', f.group)); card = el('div', 'card'); sheet.appendChild(card); continue; }
+        const row = el('label', 'row' + (f.type ? ' col' : ''));
+        const lbl = el('div', 'lbl', f.label);
+        if (f.hint) lbl.appendChild(el('small', null, f.hint));
+        row.appendChild(lbl);
+        if (f.type) {
+          const inp = el(f.type === 'text' ? 'textarea' : 'input');
+          if (f.type === 'number') { inp.type = 'number'; inp.min = '0'; inp.inputMode = 'numeric'; }
+          if (f.type === 'text') { inp.autocapitalize = 'off'; inp.spellcheck = false; }
+          inp.value = String(S[f.key]);
+          inp.addEventListener('input', () => {
+            clearTimeout(debounce);
+            debounce = setTimeout(() => {
+              const s = Object.assign({}, getS());
+              s[f.key] = f.type === 'number' ? Math.max(0, Number(inp.value) || 0) : inp.value;
+              commit(s, true);
+            }, 450);
+          });
+          row.appendChild(inp);
+        } else {
+          const sw = el('span', 'sw'); const cb = el('input'); cb.type = 'checkbox'; cb.checked = !!S[f.key];
+          cb.addEventListener('change', () => {
+            const s = Object.assign({}, getS()); s[f.key] = cb.checked;
+            commit(s, f.key !== 'showButton');
+            sheet.classList.toggle('disabled', !s.enabled);
+          });
+          sw.appendChild(cb); sw.appendChild(el('i')); row.appendChild(sw);
+        }
+        card.appendChild(row);
+      }
+
+      const foot = el('div', 'foot');
+      foot.appendChild(el('span', null, 'v' + YTC.VERSION));
+      const reset = el('button', null, 'По подразбиране');
+      reset.addEventListener('click', () => { if (confirm('Да се върнат ли настройките по подразбиране?')) { commit(YTC.defaults(), true); rebuild(); } });
+      foot.appendChild(reset);
+      sheet.appendChild(foot);
+
+      wrap.appendChild(back); wrap.appendChild(sheet);
+      root.appendChild(wrap);
+      updateLive();
     }
-    panel.appendChild(body);
+    function commit(s, needsReload) {
+      setS(s);
+      refreshFab();
+      if (needsReload && note) note.classList.add('on');
+      updateLive();
+    }
+    function rebuild() { const wasOpen = !!wrap; if (wrap) wrap.remove(); wrap = null; if (wasOpen) { build(); wrap.classList.add('open'); } }
 
-    const foot = el('div', 'ytc-foot');
-    const reset = el('button', 'ytc-btn', 'Върни по подразбиране');
-    reset.addEventListener('click', () => {
-      if (!confirm('Да се върнат ли всички настройки по подразбиране?')) return;
-      const d = YTC.defaults();
-      onSave(d);
-      YTC.buildPanel(root, d, onSave, opts);
-    });
-    foot.appendChild(reset);
-    foot.appendChild(saved);
-    panel.appendChild(foot);
-    panel.classList.toggle('ytc-off', !s.enabled);
+    let prevOverflow = '';
+    function open() {
+      mount();
+      if (wrap) wrap.remove();
+      build();
+      prevOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      requestAnimationFrame(() => requestAnimationFrame(() => wrap && wrap.classList.add('open')));
+      clearInterval(statTimer); statTimer = setInterval(updateLive, 1000);
+    }
+    function close() {
+      if (!wrap) return;
+      wrap.classList.remove('open');
+      document.body.style.overflow = prevOverflow;
+      clearInterval(statTimer);
+      const w = wrap; wrap = null; statsEls = null;
+      setTimeout(() => w.remove(), 300);
+    }
+    YTC.openPanel = open;
 
-    const style = el('style', null, YTC.PANEL_CSS);
-    root.appendChild(style);
-    root.appendChild(panel);
+    // Задържане върху логото на YouTube (или двоен тап на бутона) отваря панела – работи и при скрит бутон
+    let pressTimer = 0;
+    document.addEventListener('touchstart', (e) => {
+      const t = e.target && e.target.closest && e.target.closest('ytm-home-logo, .mobile-topbar-header-endpoint');
+      if (!t) return;
+      pressTimer = setTimeout(() => { pressTimer = 0; open(); }, 650);
+    }, { passive: true, capture: true });
+    const cancel = () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = 0; } };
+    document.addEventListener('touchend', cancel, true);
+    document.addEventListener('touchmove', cancel, true);
+    if (location.hash === '#ytc') setTimeout(open, 800);
+
+    YTC.onPass = mount;
+    YTC.uiRefresh = refreshFab;
   };
 })();

@@ -1,38 +1,36 @@
-/* YT Control – описание на настройките (споделено от разширението и userscript-а) */
+/* YT Контрол – настройки (само мобилна версия m.youtube.com) */
 (function () {
   'use strict';
   const YTC = (globalThis.YTC = globalThis.YTC || {});
-
-  YTC.VERSION = '1.0.0';
+  YTC.VERSION = '2.0.0';
+  YTC.KEY = 'ytc-settings';
 
   YTC.SCHEMA = [
-    { key: 'enabled', label: 'Включено', def: true },
+    { group: 'Shorts' },
+    { key: 'blockShorts', label: 'Блокирай Shorts напълно', hint: 'Рафтове, бутон в долната лента, табове в каналите, отделни клипове', def: true },
+    { key: 'redirectShorts', label: 'Линк към Short → нормално видео', hint: 'Иначе те връща в началото', def: true },
 
-    { group: '🚫 Shorts / Рийлс' },
-    { key: 'blockShorts', label: 'Пълно блокиране на Shorts (рафтове, бутони, табове, видеа)', def: true },
-    { key: 'redirectShorts', label: 'Линк към Short → отваряй го като нормално видео (иначе – към началото)', def: true },
+    { group: 'Реклами' },
+    { key: 'hideAds', label: 'Премахвай рекламите от данните', hint: 'Видео реклами, банери, спонсорирани карти', def: true },
+    { key: 'skipVideoAds', label: 'Резервно пропускане на видео реклами', hint: 'Ако все пак тръгне реклама: заглушава и превърта', def: true },
 
-    { group: '📺 Реклами' },
-    { key: 'hideAds', label: 'Скривай рекламни блокове, банери и спонсорирано', def: true },
-    { key: 'skipVideoAds', label: 'Автоматично пропускай видео рекламите (заглушава + превърта)', def: true },
+    { group: 'Съдържание' },
+    { key: 'hideHomeFeed', label: 'Фокус режим', hint: 'Празна начална страница, без препоръки', def: false },
+    { key: 'hideRelated', label: 'Без препоръки под видеото', def: false },
+    { key: 'hideComments', label: 'Без коментари', def: false },
+    { key: 'hideLive', label: 'Без излъчвания на живо', def: false },
+    { key: 'hideMixes', label: 'Без миксове и плейлисти', def: false },
+    { key: 'hideWatched', label: 'Без вече гледани видеа', def: false },
+    { key: 'hideShelves', label: 'Без тематични рафтове', hint: 'Новини, тенденции и др.', def: false },
 
-    { group: '🧹 Съдържание' },
-    { key: 'hideHomeFeed', label: 'Фокус режим: скрий препоръките на началната страница', def: false },
-    { key: 'hideRelated', label: 'Скрий препоръките до/под видеото', def: false },
-    { key: 'hideEndscreen', label: 'Скрий крайните карти и „следващи видеа“ в плейъра', def: false },
-    { key: 'hideComments', label: 'Скрий коментарите', def: false },
-    { key: 'hideLive', label: 'Скрий излъчвания на живо', def: false },
-    { key: 'hideMixes', label: 'Скрий миксове и плейлисти', def: false },
-    { key: 'hideWatched', label: 'Скрий вече гледани видеа', def: false },
-    { key: 'hideShelves', label: 'Скрий тематични рафтове (новини, тенденции, „Разгледайте“)', def: false },
+    { group: 'Филтри' },
+    { key: 'blockedWords', type: 'text', label: 'Блокирани думи в заглавието', hint: 'по една на ред', def: '' },
+    { key: 'blockedChannels', type: 'text', label: 'Блокирани канали', hint: 'име или @handle, по един на ред', def: '' },
+    { key: 'minDuration', type: 'number', label: 'Скрий видеа под N минути', hint: '0 = изключено', def: 0 },
 
-    { group: '🔎 Филтри' },
-    { key: 'blockedWords', type: 'text', label: 'Блокирани думи в заглавието (по една на ред)', def: '' },
-    { key: 'blockedChannels', type: 'text', label: 'Блокирани канали – име или @handle (по един на ред)', def: '' },
-    { key: 'minDuration', type: 'number', label: 'Скрий видеа, по-кратки от N минути (0 = изключено)', def: 0 },
-
-    { group: '⚙️ Общи' },
-    { key: 'showGear', label: 'Показвай бутон ⚙ върху YouTube за бърз достъп до настройките', def: true },
+    { group: 'Приложение' },
+    { key: 'showButton', label: 'Плаващ бутон 🛡', hint: 'Ако е скрит: задръж пръст върху логото на YouTube', def: true },
+    { key: 'enabled', label: 'Защитата е включена', def: true },
   ];
 
   YTC.defaults = function () {
@@ -40,18 +38,23 @@
     for (const f of YTC.SCHEMA) if (f.key) d[f.key] = f.def;
     return d;
   };
-
   YTC.normalize = function (obj) {
     const d = YTC.defaults();
     if (obj && typeof obj === 'object') {
       for (const f of YTC.SCHEMA) {
         if (!f.key || !(f.key in obj)) continue;
         const v = obj[f.key];
-        if (f.type === 'text') d[f.key] = String(v == null ? '' : v);
-        else if (f.type === 'number') d[f.key] = Math.max(0, Number(v) || 0);
-        else d[f.key] = !!v;
+        d[f.key] = f.type === 'text' ? String(v == null ? '' : v) : f.type === 'number' ? Math.max(0, Number(v) || 0) : !!v;
       }
     }
     return d;
+  };
+  YTC.load = function () {
+    try { return YTC.normalize(JSON.parse(localStorage.getItem(YTC.KEY) || 'null')); } catch (e) { return YTC.defaults(); }
+  };
+  YTC.save = function (s) {
+    try { localStorage.setItem(YTC.KEY, JSON.stringify(s)); } catch (e) { /* */ }
+    // известява и кода в страницата (другия "свят"), че настройките са сменени
+    document.dispatchEvent(new CustomEvent('ytc-settings'));
   };
 })();

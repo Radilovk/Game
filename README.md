@@ -1,6 +1,6 @@
 # 🎮 Game Collection
 
-> 🛡️ **Ново:** [YouTube Контрол](yt-control/): блокер на Shorts, реклами и нежелано съдържание (iPhone, Android, компютър).
+> 🛡️ **Ново:** [YT Контрол](yt-control/): мобилен блокер на Shorts и реклами за iPhone и Android.
 
 This repository contains two fun and interactive HTML games:
 
