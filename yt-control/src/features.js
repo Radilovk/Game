@@ -804,7 +804,9 @@
   .row small{color:#8e8e93}
   .st{margin:10px 4px 0;font-size:14px;color:#ffd60a;min-height:20px}
   `;
-  function ccWanted() { return S.enabled && S.captionsButton && location.pathname === '/watch'; }
+  // В iOS приложението (App Store / TestFlight) изтеглянето на надписи е изключено – правило 5.2.3 на Apple.
+  const IOS_APP = () => !!(window.YTCApp && window.YTCApp.platform === 'ios');
+  function ccWanted() { return S.enabled && S.captionsButton && location.pathname === '/watch' && !IOS_APP(); }
   function mountCC() {
     if (ccHost && ccHost.isConnected) return;
     if (!document.body) return;
@@ -972,10 +974,28 @@
     try { window.YTCApp.media(playing, title, ch); } catch (e) { /* */ }
   }
   ['play', 'playing', 'pause', 'ended', 'emptied'].forEach((t) => document.addEventListener(t, () => setTimeout(reportMedia, 50), true));
+
+  // iOS приложение: при излизане iOS понякога спира видеото. Ако не си го спрял ти – пускаме го отново.
+  let wasPlaying = false;
+  document.addEventListener('playing', () => { wasPlaying = true; window.__ytcUserPaused = false; }, true);
+  document.addEventListener('pause', (e) => {
+    const v = e.target;
+    if (!window.__ytcBg || window.__ytcUserPaused || !wasPlaying || !S.backgroundPlay || v.ended) { wasPlaying = !v.paused; return; }
+    if (document.querySelector('.ad-showing')) return;
+    setTimeout(() => { if (window.__ytcBg && !window.__ytcUserPaused && v.paused) v.play().catch(() => {}); }, 200);
+  }, true);
+  // докосване на пауза в самата страница = решение на потребителя
+  document.addEventListener('click', (e) => {
+    if (e.target && e.target.closest && e.target.closest('.html5-video-player, .player-controls-content, ytm-custom-control')) {
+      setTimeout(() => { const v = document.querySelector('.html5-video-player video'); if (v && v.paused) window.__ytcUserPaused = true; }, 300);
+    }
+  }, true);
   // команди от известието / заключения екран
   YTC.mediaCommand = function (cmd) {
     const v = document.querySelector('.html5-video-player video, video');
     if (!v) return;
+    // команда от заключения екран / известието = решение на потребителя
+    window.__ytcUserPaused = cmd === 'pause' || (cmd === 'toggle' && !v.paused);
     if (cmd === 'play') v.play().catch(() => {}); else if (cmd === 'pause') v.pause();
     else if (cmd === 'toggle') { if (v.paused) v.play().catch(() => {}); else v.pause(); }
   };

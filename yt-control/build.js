@@ -26,4 +26,10 @@ fs.writeFileSync(path.join(__dirname, 'dist', 'yt-control.user.js'), header + '\
 const assets = path.join(__dirname, 'android', 'app', 'src', 'main', 'assets');
 fs.mkdirSync(assets, { recursive: true });
 fs.copyFileSync(path.join(__dirname, 'dist', 'yt-control.user.js'), path.join(assets, 'yt-control.user.js'));
+// … и в iOS приложението
+const iosRes = path.join(__dirname, 'ios', 'YTKontrol', 'Resources');
+if (fs.existsSync(path.join(__dirname, 'ios'))) {
+  fs.mkdirSync(iosRes, { recursive: true });
+  fs.copyFileSync(path.join(__dirname, 'dist', 'yt-control.user.js'), path.join(iosRes, 'yt-control.user.js'));
+}
 console.log('OK v' + version);

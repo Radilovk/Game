@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const YTC = (globalThis.YTC = globalThis.YTC || {});
-  YTC.VERSION = '3.2.0';
+  YTC.VERSION = '3.3.1';
   YTC.KEY = 'ytc-settings';
 
   YTC.SCHEMA = [
