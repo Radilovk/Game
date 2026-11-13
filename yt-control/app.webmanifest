@@ -1,0 +1,14 @@
+{
+  "name": "YT Контрол",
+  "short_name": "YT Контрол",
+  "description": "YouTube без Shorts и реклами – отваря се в Safari с модула YT Контрол",
+  "start_url": "./app.html",
+  "scope": "./app.html",
+  "display": "browser",
+  "background_color": "#0f0f10",
+  "theme_color": "#0f0f10",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

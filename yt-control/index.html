@@ -212,35 +212,29 @@ footer{padding:30px 0 calc(40px + env(safe-area-inset-bottom));color:var(--mut);
         <div class="row" style="margin-top:10px"><a class="btn" id="iOpenSafari" href="#">Отвори в Safari</a><button class="btn sec" id="copyLink" type="button">Копирай линка</button></div>
       </div>
       <div class="step" data-step="i1">
-        <div class="hd"><div class="num"><span>1</span></div><h3>Приложението Userscripts</h3></div>
-        <p class="mut">Безплатно приложение с отворен код от App Store. То добавя към Safari възможност да пуска модули.</p>
+        <div class="hd"><div class="num"><span>1</span></div><h3>Изтегли Userscripts</h3></div>
+        <p class="mut">Безплатно приложение от App Store, което позволява на Safari да пуска модули. След инсталиране <b>не е нужно да го отваряш</b>. Върни се тук, в Safari.</p>
         <div class="row"><a class="btn" href="https://apps.apple.com/app/userscripts/id1463298887">Изтегли от App Store</a></div>
-        <ol><li>Отвори <b>Userscripts</b> веднъж след инсталиране.</li><li>Натисни <span class="kbd">Set Userscripts Directory</span> и избери папка (напр. <b>На моя iPhone</b>).</li></ol>
-        <button class="mark" data-mark="i1">Готово ✓</button>
-      </div>
-      <div class="step" data-step="i2">
-        <div class="hd"><div class="num"><span>2</span></div><h3>Включи го в Safari</h3></div>
-        <ol>
-          <li>Отвори <b>Настройки</b> → <b>Приложения</b> → <b>Safari</b> → <b>Разширения</b>.</li>
-          <li>Натисни <b>Userscripts</b> и го <b>включи</b>.</li>
-          <li>Под „Разрешения“ избери <b>Разрешаване</b> за всички уебсайтове (или поне за youtube.com).</li>
-        </ol>
-        <button class="mark" data-mark="i2">Готово ✓</button>
+        <button class="mark" data-mark="i1">Готово, върнах се ✓</button>
       </div>
       <div class="step" data-step="i3">
-        <div class="hd"><div class="num"><span>3</span></div><h3>Инсталирай YT Контрол</h3></div>
-        <ol>
-          <li>Натисни бутона по-долу. Ще се отвори кодът на модула.</li>
-          <li>Натисни <span class="kbd">ⓐA</span> (или <span class="kbd">🧩</span>) вляво в адресната лента → <b>Userscripts</b>.</li>
-          <li>Натисни <span class="kbd">Install</span>.</li>
-        </ol>
+        <div class="hd"><div class="num"><span>2</span></div><h3>Инсталирай YT Контрол</h3></div>
+        <p class="mut">Натисни бутона. Ще се отвори кодът на модула (това е нормално). После направи следното на същата страница:</p>
         <div class="row"><a class="btn js-script" href="dist/yt-control.user.js">Инсталирай YT Контрол</a></div>
+        <ol>
+          <li>Натисни <span class="kbd">ⓐA</span> вляво в адресната лента → <b>Управление на разширенията</b> → включи <b>Userscripts</b> → <b>Готово</b>.</li>
+          <li>Пак <span class="kbd">ⓐA</span> → <b>Userscripts</b> → <b>Разрешаване винаги</b> → <b>Винаги разрешавай на всеки уебсайт</b>.</li>
+          <li>Пак <span class="kbd">ⓐA</span> → <b>Userscripts</b> → натисни реда <b>„Userscript Detected: Tap to install“</b> → <b>Install</b>.</li>
+        </ol>
+        <p class="mut" style="font-size:14px">Върни се на тази страница. Ако всичко е наред, горе ще се появи зелено „✅ YT Контрол е инсталиран“.</p>
       </div>
       <div class="step" data-step="i4">
-        <div class="hd"><div class="num"><span>4</span></div><h3>Отвори YouTube</h3></div>
-        <p class="mut">Ако Safari попита, избери <b>Разрешаване винаги</b> за m.youtube.com. Добави сайта в <b>Любими</b> за бърз достъп.</p>
-        <div class="row"><a class="btn" href="https://m.youtube.com/">▶ Отвори YouTube</a></div>
-        <p class="mut" style="font-size:14px;margin-top:10px">На iPad: <span class="kbd">ⓐA</span> → <b>Заявка за мобилен уебсайт</b>.</p>
+        <div class="hd"><div class="num"><span>3</span></div><h3>Икона на началния екран</h3></div>
+        <p class="mut"><b>Не добавяй YouTube директно</b>: такава икона се отваря без разширенията на Safari и модулът не работи. Добави <b>нашата</b> икона. Тя отваря YouTube в Safari с включен модул.</p>
+        <div class="row"><a class="btn" id="iAddIcon" href="app.html?setup">Добави иконата YT Контрол</a></div>
+        <p class="mut" style="font-size:14px;margin-top:10px">На следващата страница: <span class="kbd">Сподели ⬆︎</span> → <b>Добавяне към началния екран</b>. Ако има превключвател <b>„Отваряне като уеб приложение“</b>, <b>изключи го</b> → <b>Добави</b>.</p>
+        <div class="row"><a class="btn sec" href="https://m.youtube.com/">▶ Или просто отвори YouTube</a></div>
+        <p class="mut" style="font-size:14px;margin-top:10px">На iPad: в YouTube натисни <span class="kbd">ⓐA</span> → <b>Заявка за мобилен уебсайт</b>.</p>
       </div>
     </div>
   </div>
@@ -255,6 +249,7 @@ footer{padding:30px 0 calc(40px + env(safe-area-inset-bottom));color:var(--mut);
     <details><summary>Безопасно ли е? Събира ли данни?</summary><p>Модулът не изпраща нищо никъде. Приложението за Android иска единствено достъп до интернет. Работи изцяло на телефона ти и настройките се пазят само там. Кодът е отворен и всеки може да го прегледа.</p></details>
     <details><summary>Ще се обновява ли?</summary><p>Да. Приложението за Android само изтегля новата версия на модула и я ползва при следващото отваряне. На iPhone обновяването става от приложението Userscripts. Ако YouTube смени нещо, новата версия идва сама.</p></details>
     <details><summary>Как работи слушането във фонов режим?</summary><p>Пусни видео и заключи екрана или отвори друго приложение. Звукът продължава. На Android управляваш от известието, от заключения екран и от слушалките. На iPhone Safari може да спре звука при заключване: натисни „▶“ на заключения екран и продължава.</p></details>
+    <details><summary>iPhone: добавих YouTube на началния екран, но модулът не работи</summary><p>Иконите на началния екран iPhone ги отваря като отделни „уеб приложения“, а в тях разширенията на Safari не работят. Изтрий иконата и добави <b>иконата YT Контрол</b> (стъпка 3 при инсталирането). Тя отваря YouTube в истинския Safari и модулът работи. Ако iPhone все пак я отвори като отделно приложение, тя сама ще те прехвърли в Safari.</p></details>
     <details><summary>Къде се запазват надписите?</summary><p>На Android в <b>Изтегляния/YT Kontrol</b>. На iPhone Safari предлага да изтеглиш файла и той отива във <b>Файлове → Изтегляния</b>.</p></details>
     <details><summary>Как да отворя настройките?</summary><p>Натисни червения бутон 🛡 долу вдясно в YouTube. Ако си го скрил, задръж пръст върху логото на YouTube горе вляво.</p></details>
     <details><summary>YouTube казва „Блокерите на реклами не са разрешени“</summary><p>Отвори 🛡 и изключи „Премахвай рекламите от данните“. Рекламите пак ще се прескачат автоматично, а Shorts и филтрите продължават да работят. Същото направи, ако клиповете тръгват бавно.</p></details>
@@ -305,6 +300,9 @@ footer{padding:30px 0 calc(40px + env(safe-area-inset-bottom));color:var(--mut);
     (navigator.clipboard ? navigator.clipboard.writeText(here) : Promise.reject()).then(function () { b.textContent = 'Копирано ✓'; }, function () { prompt('Копирай линка:', here); });
   });
 
+  var addIcon = document.getElementById('iAddIcon');
+  if (addIcon) addIcon.addEventListener('click', function () { try { sessionStorage.setItem('ytc-setup', '1'); } catch (e) {} });
+
   // ----- отметки "Готово" (помнят се на устройството) -----
   function mark(id, on) {
     var el = document.querySelector('[data-step="' + id + '"]');
@@ -321,7 +319,7 @@ footer{padding:30px 0 calc(40px + env(safe-area-inset-bottom));color:var(--mut);
   function installed() {
     var v = document.documentElement.getAttribute('data-ytc-installed');
     if (!v) return;
-    ['i1', 'i2', 'i3'].forEach(function (id) { mark(id, true); });
+    ['i1', 'i3'].forEach(function (id) { mark(id, true); });
     var ok = document.getElementById('installedOk');
     ok.textContent = '✅ YT Контрол v' + v + ' е инсталиран на това устройство! Остава само да отвориш YouTube.';
     ok.classList.add('on');

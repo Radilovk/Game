@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>YT Контрол</title>
+<!-- Нарочно БЕЗ apple-mobile-web-app-capable: иконата на началния екран трябва да отваря истинския Safari,
+     защото само там работят разширенията (и модулът YT Контрол). -->
+<meta name="apple-mobile-web-app-title" content="YT Контрол">
+<meta name="theme-color" content="#0f0f10">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="manifest" href="app.webmanifest">
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:#0f0f10;color:#f4f4f6;font:16px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text",Roboto,sans-serif;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px 22px calc(28px + env(safe-area-inset-bottom));text-align:center}
+  img.logo{width:84px;height:84px;border-radius:20px;margin-bottom:18px;box-shadow:0 10px 30px rgba(255,0,51,.35)}
+  h1{font-size:24px;margin:0 0 8px}
+  p{color:#a1a1aa;margin:0 0 18px;max-width:420px}
+  .btn{display:flex;align-items:center;justify-content:center;width:100%;max-width:420px;min-height:54px;border-radius:14px;border:0;
+    background:#ff0033;color:#fff;font:600 17px inherit;text-decoration:none;margin-top:10px}
+  .btn.sec{background:#232327;border:1px solid #2e2e33}
+  .steps{text-align:left;max-width:420px;width:100%;background:#1a1a1d;border:1px solid #2e2e33;border-radius:16px;padding:14px 18px 14px 38px;margin:6px 0 8px}
+  .steps li{margin:8px 0}
+  .kbd{display:inline-block;background:#232327;border:1px solid #2e2e33;border-radius:6px;padding:0 6px;white-space:nowrap}
+  .hide{display:none}
+  .arrow{font-size:34px;animation:b 1.2s infinite;margin-top:6px}
+  @keyframes b{50%{transform:translateY(8px)}}
+</style>
+</head>
+<body>
+  <img class="logo" src="icons/icon-180.png" alt="">
+
+  <!-- 1) Обикновено отваряне (от иконата): веднага към YouTube в Safari -->
+  <div id="go">
+    <h1>Отваряне на YouTube…</h1>
+    <p>С включени YT Контрол: без Shorts и без реклами.</p>
+    <a class="btn" href="https://m.youtube.com/">▶ Отвори YouTube</a>
+  </div>
+
+  <!-- 2) Отворено като "уеб приложение" – там разширенията не работят → към Safari -->
+  <div id="standalone" class="hide">
+    <h1>Отвори в Safari</h1>
+    <p>Тази икона е отворена като отделно приложение, а там iPhone не пуска модула. Натисни бутона – YouTube ще се отвори в Safari с YT Контрол.</p>
+    <a class="btn" id="toSafari" href="x-safari-https://m.youtube.com/">Отвори в Safari</a>
+    <p style="margin-top:18px;font-size:14px">За да не се случва повече: изтрий иконата и я добави отново, като при добавянето <b>изключиш</b> „Отваряне като уеб приложение“.</p>
+  </div>
+
+  <!-- 3) Добавяне на иконата (идва от страницата за инсталиране) -->
+  <div id="setup" class="hide">
+    <h1>Добави иконата</h1>
+    <p>Иконата ще отваря YouTube директно в Safari – с работещ YT Контрол.</p>
+    <ol class="steps">
+      <li>Натисни <span class="kbd">Сподели</span> <span class="kbd">⬆︎</span> (долу или горе в Safari, понякога е под <span class="kbd">⋯</span>).</li>
+      <li>Превърти и избери <b>„Добавяне към началния екран“</b>.</li>
+      <li>Ако виждаш <b>„Отваряне като уеб приложение“</b> – <b>изключи</b> го.</li>
+      <li>Натисни <b>„Добави“</b>.</li>
+    </ol>
+    <div class="arrow">⬇︎</div>
+    <a class="btn sec" href="https://m.youtube.com/">Пропусни – отвори YouTube</a>
+  </div>
+
+<script>
+(function () {
+  var standalone = window.navigator.standalone === true ||
+    (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+  var setup = false;
+  try { setup = sessionStorage.getItem('ytc-setup') === '1' || /[?&]setup\b/.test(location.search) && !standalone; } catch (e) {}
+  var show = function (id) { ['go', 'standalone', 'setup'].forEach(function (x) { document.getElementById(x).classList.toggle('hide', x !== id); }); };
+  if (standalone) {
+    show('standalone');
+    // опит директно да отворим Safari; ако iOS не позволи – остава бутонът
+    setTimeout(function () { location.href = 'x-safari-https://m.youtube.com/'; }, 400);
+  } else if (setup) {
+    show('setup');
+    // иконата трябва да сочи към този адрес БЕЗ "setup", за да отваря YouTube директно
+    try { sessionStorage.removeItem('ytc-setup'); } catch (e) {}
+    if (location.search) history.replaceState(null, '', location.pathname);
+  } else {
+    show('go');
+    location.replace('https://m.youtube.com/');
+  }
+})();
+</script>
+</body>
+</html>
