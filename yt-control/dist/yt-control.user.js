@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YT Контрол – блокер на Shorts и реклами (мобилен)
 // @namespace    yt-control
-// @version      3.2.0
+// @version      3.3.0
 // @description  Изрязва Shorts и рекламите от данните на m.youtube.com, преди да се покажат. Филтри по думи и канали, фокус режим.
 // @match        https://m.youtube.com/*
 // @match        https://radilovk.github.io/Game/yt-control/*
@@ -18,7 +18,7 @@
 (function () {
   'use strict';
   const YTC = (globalThis.YTC = globalThis.YTC || {});
-  YTC.VERSION = '3.2.0';
+  YTC.VERSION = '3.3.0';
   YTC.KEY = 'ytc-settings';
 
   YTC.SCHEMA = [
@@ -1507,10 +1507,28 @@
     try { window.YTCApp.media(playing, title, ch); } catch (e) { /* */ }
   }
   ['play', 'playing', 'pause', 'ended', 'emptied'].forEach((t) => document.addEventListener(t, () => setTimeout(reportMedia, 50), true));
+
+  // iOS приложение: при излизане iOS понякога спира видеото. Ако не си го спрял ти – пускаме го отново.
+  let wasPlaying = false;
+  document.addEventListener('playing', () => { wasPlaying = true; window.__ytcUserPaused = false; }, true);
+  document.addEventListener('pause', (e) => {
+    const v = e.target;
+    if (!window.__ytcBg || window.__ytcUserPaused || !wasPlaying || !S.backgroundPlay || v.ended) { wasPlaying = !v.paused; return; }
+    if (document.querySelector('.ad-showing')) return;
+    setTimeout(() => { if (window.__ytcBg && !window.__ytcUserPaused && v.paused) v.play().catch(() => {}); }, 200);
+  }, true);
+  // докосване на пауза в самата страница = решение на потребителя
+  document.addEventListener('click', (e) => {
+    if (e.target && e.target.closest && e.target.closest('.html5-video-player, .player-controls-content, ytm-custom-control')) {
+      setTimeout(() => { const v = document.querySelector('.html5-video-player video'); if (v && v.paused) window.__ytcUserPaused = true; }, 300);
+    }
+  }, true);
   // команди от известието / заключения екран
   YTC.mediaCommand = function (cmd) {
     const v = document.querySelector('.html5-video-player video, video');
     if (!v) return;
+    // команда от заключения екран / известието = решение на потребителя
+    window.__ytcUserPaused = cmd === 'pause' || (cmd === 'toggle' && !v.paused);
     if (cmd === 'play') v.play().catch(() => {}); else if (cmd === 'pause') v.pause();
     else if (cmd === 'toggle') { if (v.paused) v.play().catch(() => {}); else v.pause(); }
   };
@@ -1953,6 +1971,24 @@
       g2.appendChild(c);
     }
     sh.appendChild(g2);
+
+    // картина в картината (Safari и iOS приложението; в Android приложението става автоматично)
+    const pv = video();
+    const canPip = pv && !(window.YTCApp && window.YTCApp.setPip) &&
+      ((typeof pv.webkitSupportsPresentationMode === 'function' && pv.webkitSupportsPresentationMode('picture-in-picture')) || document.pictureInPictureEnabled);
+    if (canPip) {
+      const pb = el('button', 'a', '🖼 Картина в картината');
+      pb.style.cssText = 'display:block;width:100%;margin:10px 0 0';
+      pb.addEventListener('click', () => {
+        const v = video(); if (!v) return;
+        try {
+          if (typeof v.webkitSetPresentationMode === 'function') v.webkitSetPresentationMode(v.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture');
+          else if (document.pictureInPictureElement) document.exitPictureInPicture(); else v.requestPictureInPicture();
+        } catch (e) { /* */ }
+        close();
+      });
+      sh.appendChild(pb);
+    }
 
     const loopRow = el('div', 'row');
     const lt = el('div', null, 'Повтаряй това видео'); lt.appendChild(el('small', null, 'Безкрайно, докато го изключиш'));

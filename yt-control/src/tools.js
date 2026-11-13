@@ -340,6 +340,24 @@
     }
     sh.appendChild(g2);
 
+    // картина в картината (Safari и iOS приложението; в Android приложението става автоматично)
+    const pv = video();
+    const canPip = pv && !(window.YTCApp && window.YTCApp.setPip) &&
+      ((typeof pv.webkitSupportsPresentationMode === 'function' && pv.webkitSupportsPresentationMode('picture-in-picture')) || document.pictureInPictureEnabled);
+    if (canPip) {
+      const pb = el('button', 'a', '🖼 Картина в картината');
+      pb.style.cssText = 'display:block;width:100%;margin:10px 0 0';
+      pb.addEventListener('click', () => {
+        const v = video(); if (!v) return;
+        try {
+          if (typeof v.webkitSetPresentationMode === 'function') v.webkitSetPresentationMode(v.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture');
+          else if (document.pictureInPictureElement) document.exitPictureInPicture(); else v.requestPictureInPicture();
+        } catch (e) { /* */ }
+        close();
+      });
+      sh.appendChild(pb);
+    }
+
     const loopRow = el('div', 'row');
     const lt = el('div', null, 'Повтаряй това видео'); lt.appendChild(el('small', null, 'Безкрайно, докато го изключиш'));
     loopRow.appendChild(lt);
