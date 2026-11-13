@@ -804,7 +804,9 @@
   .row small{color:#8e8e93}
   .st{margin:10px 4px 0;font-size:14px;color:#ffd60a;min-height:20px}
   `;
-  function ccWanted() { return S.enabled && S.captionsButton && location.pathname === '/watch'; }
+  // В iOS приложението (App Store / TestFlight) изтеглянето на надписи е изключено – правило 5.2.3 на Apple.
+  const IOS_APP = () => !!(window.YTCApp && window.YTCApp.platform === 'ios');
+  function ccWanted() { return S.enabled && S.captionsButton && location.pathname === '/watch' && !IOS_APP(); }
   function mountCC() {
     if (ccHost && ccHost.isConnected) return;
     if (!document.body) return;

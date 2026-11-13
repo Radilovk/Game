@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YT Контрол – блокер на Shorts и реклами (мобилен)
 // @namespace    yt-control
-// @version      3.3.0
+// @version      3.3.1
 // @description  Изрязва Shorts и рекламите от данните на m.youtube.com, преди да се покажат. Филтри по думи и канали, фокус режим.
 // @match        https://m.youtube.com/*
 // @match        https://radilovk.github.io/Game/yt-control/*
@@ -18,7 +18,7 @@
 (function () {
   'use strict';
   const YTC = (globalThis.YTC = globalThis.YTC || {});
-  YTC.VERSION = '3.3.0';
+  YTC.VERSION = '3.3.1';
   YTC.KEY = 'ytc-settings';
 
   YTC.SCHEMA = [
@@ -1339,7 +1339,9 @@
   .row small{color:#8e8e93}
   .st{margin:10px 4px 0;font-size:14px;color:#ffd60a;min-height:20px}
   `;
-  function ccWanted() { return S.enabled && S.captionsButton && location.pathname === '/watch'; }
+  // В iOS приложението (App Store / TestFlight) изтеглянето на надписи е изключено – правило 5.2.3 на Apple.
+  const IOS_APP = () => !!(window.YTCApp && window.YTCApp.platform === 'ios');
+  function ccWanted() { return S.enabled && S.captionsButton && location.pathname === '/watch' && !IOS_APP(); }
   function mountCC() {
     if (ccHost && ccHost.isConnected) return;
     if (!document.body) return;
@@ -2192,6 +2194,7 @@
 
       let card = null, debounce;
       for (const f of YTC.SCHEMA) {
+        if (f.key === 'captionsButton' && window.YTCApp && window.YTCApp.platform === 'ios') continue; // няма го в iOS приложението
         if (f.group) { sheet.appendChild(el('div', 'grp', f.group)); card = el('div', 'card'); sheet.appendChild(card); continue; }
         const row = el('label', 'row' + (f.type ? ' col' : ''));
         const lbl = el('div', 'lbl', f.label);

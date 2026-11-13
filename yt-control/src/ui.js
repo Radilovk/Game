@@ -177,6 +177,7 @@
 
       let card = null, debounce;
       for (const f of YTC.SCHEMA) {
+        if (f.key === 'captionsButton' && window.YTCApp && window.YTCApp.platform === 'ios') continue; // няма го в iOS приложението
         if (f.group) { sheet.appendChild(el('div', 'grp', f.group)); card = el('div', 'card'); sheet.appendChild(card); continue; }
         const row = el('label', 'row' + (f.type ? ' col' : ''));
         const lbl = el('div', 'lbl', f.label);
