@@ -116,8 +116,89 @@ try {
     for (const [what, path] of [['профил', st.profileId && `/v1/profiles/${st.profileId}`], ['сертификат', st.certId && `/v1/certificates/${st.certId}`]].filter((x) => x[1])) {
       try { await api('DELETE', path); console.log(`✓ изтрит ${what}`); } catch (e) { console.log(`! ${what} не се изтри: ${e.message}`); }
     }
+  } else if (action === 'distribute') {
+    // Новият build → външните групи (публичния линк) → изпратен за бета ревю.
+    // За вече одобрена версия Apple обикновено го пуска веднага, без пълно ревю.
+    const num = process.env.BUILD_NUMBER;
+    if (!num) fail('Липсва BUILD_NUMBER.');
+    const app = (await api('GET', `/v1/apps?filter[bundleId]=${encodeURIComponent(BUNDLE)}`)).data[0];
+    if (!app) fail(`Няма приложение с Bundle ID ${BUNDLE}.`);
+    let build = null;
+    const deadline = Date.now() + 35 * 60e3;   // Apple обработва build-а обикновено 5–20 мин
+    while (Date.now() < deadline) {
+      const list = (await api('GET', `/v1/builds?filter[app]=${app.id}&filter[version]=${encodeURIComponent(num)}&limit=5`)).data;
+      build = list[0] || null;
+      const st = build && build.attributes.processingState;
+      console.log(`build ${num}: ${st || 'още не е регистриран'}`);
+      if (st === 'VALID') break;
+      if (st === 'FAILED' || st === 'INVALID') fail(`Apple отхвърли build ${num} при обработката (${st}). Провери имейла от App Store Connect.`);
+      await new Promise((r) => setTimeout(r, 30000));
+    }
+    if (!build || build.attributes.processingState !== 'VALID') fail(`Build ${num} не се обработи навреме – пусни отново по-късно (действие distribute) или го добави ръчно.`);
+    if (build.attributes.usesNonExemptEncryption == null) {
+      await api('PATCH', `/v1/builds/${build.id}`, { data: { type: 'builds', id: build.id, attributes: { usesNonExemptEncryption: false } } });
+    }
+    // какво е новото (вижда се в TestFlight)
+    try {
+      await api('POST', '/v1/betaBuildLocalizations', { data: { type: 'betaBuildLocalizations',
+        attributes: { locale: 'en-US', whatsNew: process.env.WHATS_NEW || 'Improvements and fixes.' },
+        relationships: { build: { data: { type: 'builds', id: build.id } } } } });
+    } catch (_) { /* вече има */ }
+    const groups = (await api('GET', `/v1/apps/${app.id}/betaGroups?limit=50`)).data.filter((g) => !g.attributes.isInternalGroup);
+    if (!groups.length) { summary('Няма външна група – build-ът е само за вътрешно тестване.'); process.exit(0); }
+    for (const g of groups) {
+      try {
+        await api('POST', `/v1/betaGroups/${g.id}/relationships/builds`, { data: [{ type: 'builds', id: build.id }] });
+        console.log(`✓ build ${num} → група „${g.attributes.name}“`);
+      } catch (e) { console.log(`! група „${g.attributes.name}“: ${e.message.slice(0, 200)}`); }
+    }
+    try {
+      await api('POST', '/v1/betaAppReviewSubmissions', { data: { type: 'betaAppReviewSubmissions',
+        relationships: { build: { data: { type: 'builds', id: build.id } } } } });
+      console.log('✓ изпратен за бета ревю');
+    } catch (e) { console.log(`(бета ревю: ${e.message.slice(0, 200)})`); }
+    let state = '';
+    try { state = ((await api('GET', `/v1/betaAppReviewSubmissions?filter[build]=${build.id}`)).data[0] || {}).attributes?.betaReviewState || ''; } catch (_) { /* */ }
+    summary(`### Build ${num} е разпространен ✓\nДобавен към външните групи (${groups.map((g) => g.attributes.name).join(', ')}). Бета ревю: **${state || 'изпратено'}** – за вече одобрена версия обикновено минава автоматично.`);
+  } else if (action === 'status') {
+    // САМО ЧЕТЕНЕ: нищо не се променя в акаунта. Без имейли (логовете на репото са публични).
+    const app = (await api('GET', `/v1/apps?filter[bundleId]=${encodeURIComponent(BUNDLE)}`)).data[0];
+    if (!app) fail(`Няма приложение с Bundle ID ${BUNDLE}.`);
+    summary(`## ${app.attributes.name} (${BUNDLE})`);
+    const vers = (await api('GET', `/v1/apps/${app.id}/appStoreVersions?limit=5`)).data;
+    summary('### App Store (публична версия)');
+    for (const v of vers) summary(`- версия ${v.attributes.versionString}: **${v.attributes.appStoreState}**`);
+    try {
+      const subs = (await api('GET', `/v1/reviewSubmissions?filter[app]=${app.id}&limit=10`)).data;
+      if (!subs.length) summary('- заявки за ревю в App Store: **няма** (нищо не е изпращано за публикуване)');
+      for (const r of subs) summary(`- заявка за ревю в App Store: **${r.attributes.state}** (подадена ${r.attributes.submittedDate || '—'})`);
+    } catch (e) { summary(`- заявки за ревю в App Store: не можаха да се прочетат (${e.message.slice(0, 120)})`); }
+    const builds = await api('GET', `/v1/builds?filter[app]=${app.id}&sort=-uploadedDate&limit=5&include=buildBetaDetail`);
+    const det = Object.fromEntries((builds.included || []).filter((x) => x.type === 'buildBetaDetails').map((x) => [x.id, x.attributes]));
+    summary('### TestFlight – build-ове');
+    for (const b of builds.data) {
+      const d = det[b.relationships?.buildBetaDetail?.data?.id] || {};
+      let review = '';
+      try {
+        const r = (await api('GET', `/v1/betaAppReviewSubmissions?filter[build]=${b.id}`)).data[0];
+        if (r) review = `, ревю за външно тестване: **${r.attributes.betaReviewState}**`;
+      } catch (_) { /* */ }
+      summary(`- build ${b.attributes.version} (качен ${b.attributes.uploadedDate}): обработка **${b.attributes.processingState}**, изтекъл: ${b.attributes.expired ? 'да' : 'не'}, ` +
+        `криптиране: ${b.attributes.usesNonExemptEncryption == null ? 'без отговор' : b.attributes.usesNonExemptEncryption}, ` +
+        `вътрешно: **${d.internalBuildState || '?'}**, външно: **${d.externalBuildState || '?'}**${review}`);
+    }
+    summary('### TestFlight – групи');
+    const groups = (await api('GET', `/v1/apps/${app.id}/betaGroups?limit=50`)).data;
+    if (!groups.length) summary('- няма нито една група с тестери');
+    for (const g of groups) {
+      const testers = (await api('GET', `/v1/betaGroups/${g.id}/betaTesters?limit=200`)).data.length;
+      const gb = (await api('GET', `/v1/betaGroups/${g.id}/builds?limit=50`)).data.map((x) => x.attributes.version);
+      summary(`- „${g.attributes.name}“: ${g.attributes.isInternalGroup ? 'ВЪТРЕШНА' : 'ВЪНШНА'}, тестери: ${testers}, ` +
+        `всички build-ове: ${g.attributes.hasAccessToAllBuilds ? 'да' : 'не'}, build-ове в групата: ${gb.join(', ') || 'няма'}` +
+        (g.attributes.publicLinkEnabled ? ', публичен линк: да' : ''));
+    }
   } else {
-    fail('действие: bundle | prepare | cleanup');
+    fail('действие: bundle | prepare | cleanup | status | distribute');
   }
 } catch (e) {
   fail(String(e.message).slice(0, 700));
