@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const YTC = (globalThis.YTC = globalThis.YTC || {});
-  YTC.VERSION = '3.4.0';
+  YTC.VERSION = '3.5.0';
   YTC.KEY = 'ytc-settings';
 
   YTC.SCHEMA = [
@@ -19,6 +19,9 @@
     { key: 'sponsorBlock', label: 'Прескачай спонсорските части в клиповете', hint: 'Данни от общността SponsorBlock. Изпраща се само част от хеша на видеото', def: true },
     { key: 'pip', label: 'Картина в картината (Android)', hint: 'При излизане от приложението видеото продължава в малко прозорче', def: true },
     { key: 'backgroundPlay', label: 'Слушане във фонов режим', hint: 'Продължава при заключен екран и в други приложения', def: true },
+    { key: 'gestures', label: 'Жестове върху видеото', hint: 'Плъзни настрани – превъртане; вляво нагоре/надолу – яркост; вдясно – звук; задръж – 2×', def: true },
+    { key: 'normalizeAudio', label: 'Изравнявай силата на звука', hint: 'Тихите клипове по-силно, силните по-тихо. Ако на iPhone звукът спре при заключен екран – изключи го', def: false },
+    { key: 'watchStats', label: 'Статистика на гледането', hint: 'Време по дни и най-гледани канали – чип „Статистика“ на началната страница', def: true },
     { key: 'showDates', label: 'Дата на качване навсякъде', hint: 'Добавя датата и в препоръките под видеото', def: true },
     { key: 'captionsButton', label: 'Бутон за изтегляне на надписи', hint: 'Бутон „CC“ при гледане на видео', def: true },
 
