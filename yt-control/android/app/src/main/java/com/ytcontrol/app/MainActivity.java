@@ -113,7 +113,7 @@ public class MainActivity extends Activity {
 
         script = loadScript();
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-            WebViewCompat.addDocumentStartJavaScript(web, script, Collections.singleton("https://m.youtube.com"));
+            scriptHandler = WebViewCompat.addDocumentStartJavaScript(web, script, Collections.singleton("https://m.youtube.com"));
             docStartInjected = true;
         }
 
@@ -190,6 +190,7 @@ public class MainActivity extends Activity {
         }
     }
 
+    private androidx.webkit.ScriptHandler scriptHandler;
     private boolean playing = false, serviceStarted = false, pipEnabled = true, leftPip = false, stopped = false;
 
     // ---------------------------------------------------------------- картина в картината
@@ -504,7 +505,7 @@ public class MainActivity extends Activity {
         return bundled;
     }
 
-    /** Във фон проверява за нова версия на модула. Ще се ползва при следващото отваряне на приложението. */
+    /** Във фон проверява за нова версия на модула. Ако нищо не свири – прилага я веднага, иначе при следващото отваряне. */
     private void checkForScriptUpdate() {
         new Thread(() -> {
             try {
@@ -519,10 +520,24 @@ public class MainActivity extends Activity {
                 File tmp = new File(getFilesDir(), SCRIPT_ASSET + ".tmp");
                 try (FileOutputStream out = new FileOutputStream(tmp)) { out.write(fresh.getBytes(StandardCharsets.UTF_8)); }
                 if (tmp.renameTo(new File(getFilesDir(), SCRIPT_ASSET))) {
-                    toast("YT Контрол е обновен до v" + version(fresh) + " – важи от следващото отваряне");
+                    ui.post(() -> applyScriptNow(fresh));
                 }
             } catch (Exception ignored) { }
         }).start();
+    }
+
+    /** Новият модул веднага: сменя вкарания скрипт и презарежда страницата (само ако не гледаш нищо в момента). */
+    private void applyScriptNow(String fresh) {
+        if (playing || customView != null) { toast("YT Контрол е обновен до v" + version(fresh) + " – важи от следващото отваряне"); return; }
+        try {
+            if (scriptHandler != null) scriptHandler.remove();
+            script = fresh;
+            if (docStartInjected) scriptHandler = WebViewCompat.addDocumentStartJavaScript(web, script, Collections.singleton("https://m.youtube.com"));
+            web.reload();
+            toast("✓ YT Контрол е обновен до v" + version(fresh));
+        } catch (Exception e) {
+            toast("YT Контрол е обновен до v" + version(fresh) + " – важи от следващото отваряне");
+        }
     }
 
     private static boolean isValid(String s) {

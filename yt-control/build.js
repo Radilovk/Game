@@ -19,7 +19,7 @@ const header = `// ==UserScript==
 // @noframes
 // ==/UserScript==
 `;
-const body = ['schema.js', 'hook.js', 'dom.js', 'features.js', 'tools.js', 'media.js', 'kids.js', 'ui.js', 'boot.js'].map(read).join('\n');
+const body = ['schema.js', 'hook.js', 'dom.js', 'features.js', 'tools.js', 'media.js', 'nav.js', 'kids.js', 'ui.js', 'boot.js'].map(read).join('\n');
 fs.mkdirSync(path.join(__dirname, 'dist'), { recursive: true });
 fs.writeFileSync(path.join(__dirname, 'dist', 'yt-control.user.js'), header + '\n' + body);
 // същият модул се вгражда и в Android приложението

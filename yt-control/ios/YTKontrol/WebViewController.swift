@@ -86,8 +86,19 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
 
         ModuleLoader.checkForUpdate { [weak self] version in
             guard let v = version else { return }
-            self?.toast("YT Контрол е обновен до v\(v) – важи от следващото отваряне")
+            self?.applyModuleNow(v)
         }
+    }
+
+    /// Новата версия на модула – веднага, ако нищо не свири (иначе при следващото отваряне).
+    private func applyModuleNow(_ v: String) {
+        guard !isPlaying else { toast("YT Контрол е обновен до v\(v) – важи от следващото отваряне"); return }
+        let ucc = webView.configuration.userContentController
+        ucc.removeAllUserScripts()
+        ucc.addUserScript(WKUserScript(source: Self.bridgeJS, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page))
+        ucc.addUserScript(WKUserScript(source: ModuleLoader.script(), injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page))
+        webView.reload()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in self?.toast("✓ YT Контрол е обновен до v\(v)") }
     }
 
     // MARK: - Входящи линкове (ytkontrol://…)
