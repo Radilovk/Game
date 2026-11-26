@@ -169,6 +169,11 @@
         sheet.appendChild(lb);
       }
 
+      const kb = el('button', 'act', '👨‍👩‍👧 Родителски контрол' + (YTC.kids && YTC.kids.active() ? ' – включен' : ''));
+      kb.style.color = '#30d158';
+      kb.addEventListener('click', () => { close(); if (YTC.kids) YTC.kids.openSettings(); });
+      sheet.appendChild(kb);
+
       note = el('div', 'note');
       note.appendChild(el('span', null, 'Някои промени важат напълно след презареждане.'));
       const rl = el('button', null, 'Презареди'); rl.addEventListener('click', () => location.reload());
@@ -229,7 +234,9 @@
     function rebuild() { const wasOpen = !!wrap; if (wrap) wrap.remove(); wrap = null; if (wasOpen) { build(); wrap.classList.add('open'); } }
 
     let prevOverflow = '';
-    function open() {
+    // при включен родителски контрол настройките искат ПИН (иначе детето просто би го изключило)
+    function open() { if (YTC.kids) YTC.kids.guard(openNow); else openNow(); }
+    function openNow() {
       mount();
       if (wrap) wrap.remove();
       build();

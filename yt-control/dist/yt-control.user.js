@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YT Контрол – блокер на Shorts и реклами (мобилен)
 // @namespace    yt-control
-// @version      3.3.1
+// @version      3.5.0
 // @description  Изрязва Shorts и рекламите от данните на m.youtube.com, преди да се покажат. Филтри по думи и канали, фокус режим.
 // @match        https://m.youtube.com/*
 // @match        https://radilovk.github.io/Game/yt-control/*
@@ -18,7 +18,7 @@
 (function () {
   'use strict';
   const YTC = (globalThis.YTC = globalThis.YTC || {});
-  YTC.VERSION = '3.3.1';
+  YTC.VERSION = '3.5.0';
   YTC.KEY = 'ytc-settings';
 
   YTC.SCHEMA = [
@@ -35,6 +35,9 @@
     { key: 'sponsorBlock', label: 'Прескачай спонсорските части в клиповете', hint: 'Данни от общността SponsorBlock. Изпраща се само част от хеша на видеото', def: true },
     { key: 'pip', label: 'Картина в картината (Android)', hint: 'При излизане от приложението видеото продължава в малко прозорче', def: true },
     { key: 'backgroundPlay', label: 'Слушане във фонов режим', hint: 'Продължава при заключен екран и в други приложения', def: true },
+    { key: 'gestures', label: 'Жестове върху видеото', hint: 'Плъзни настрани – превъртане; вляво нагоре/надолу – яркост; вдясно – звук; задръж – 2×', def: true },
+    { key: 'normalizeAudio', label: 'Изравнявай силата на звука', hint: 'Тихите клипове по-силно, силните по-тихо. Ако на iPhone звукът спре при заключен екран – изключи го', def: false },
+    { key: 'watchStats', label: 'Статистика на гледането', hint: 'Време по дни и най-гледани канали – чип „Статистика“ на началната страница', def: true },
     { key: 'showDates', label: 'Дата на качване навсякъде', hint: 'Добавя датата и в препоръките под видеото', def: true },
     { key: 'captionsButton', label: 'Бутон за изтегляне на надписи', hint: 'Бутон „CC“ при гледане на видео', def: true },
 
@@ -514,6 +517,7 @@
     S = ns;
     if (YTC.featuresApply) YTC.featuresApply(ns);
     if (YTC.toolsApply) YTC.toolsApply(ns);
+    if (YTC.mediaApply) YTC.mediaApply(ns);
     document.querySelectorAll('[data-ytc-hidden]').forEach((e) => e.removeAttribute('data-ytc-hidden'));
     lastHref = '';
     if (!S.enabled && document.documentElement) document.documentElement.classList.remove('ytc-home');
@@ -524,6 +528,7 @@
     S = initial;
     if (YTC.featuresApply) YTC.featuresApply(initial);
     if (YTC.toolsApply) YTC.toolsApply(initial);
+    if (YTC.mediaApply) YTC.mediaApply(initial);
     document.addEventListener('click', onClick, true);
     ['state-navigateend', 'yt-navigate-finish', 'popstate'].forEach((ev) => window.addEventListener(ev, schedule, true));
     new MutationObserver(schedule).observe(document, { childList: true, subtree: true });
@@ -683,7 +688,61 @@
     add(it) { if (!it || !it.id || this.has(it.id)) return; const a = this.all(); a.unshift({ id: it.id, title: it.title, channel: it.channel, dur: it.dur, thumb: it.thumb, t: Date.now() }); LS.set(LATER_KEY, a.slice(0, 500)); },
     remove(id) { LS.set(LATER_KEY, this.all().filter((x) => x.id !== id)); },
   };
-  YTC.subs = subs; YTC.later = later;
+  const FAV_KEY = 'ytc-fav';
+  const fav = {
+    all() { return LS.get(FAV_KEY, []); },
+    has(id) { return !!id && this.all().some((x) => x.id === id); },
+    add(it) { if (!it || !it.id || this.has(it.id)) return; const a = this.all(); a.unshift({ id: it.id, title: it.title, channel: it.channel, dur: it.dur, thumb: it.thumb, t: Date.now() }); LS.set(FAV_KEY, a.slice(0, 1000)); },
+    remove(id) { LS.set(FAV_KEY, this.all().filter((x) => x.id !== id)); },
+  };
+  const PL_KEY = 'ytc-playlists';
+  const pls = {
+    all() { return LS.get(PL_KEY, []); },
+    get(id) { return this.all().find((p) => p.id === id) || null; },
+    save(a) { LS.set(PL_KEY, a); },
+    create(name) { const a = this.all(); const p = { id: 'p' + Date.now().toString(36), name: String(name).slice(0, 60), items: [], t: Date.now() }; a.unshift(p); this.save(a); return p; },
+    rename(id, name) { const a = this.all(); const p = a.find((x) => x.id === id); if (p) { p.name = String(name).slice(0, 60); this.save(a); } },
+    remove(id) { this.save(this.all().filter((p) => p.id !== id)); },
+    has(id, vid) { const p = this.get(id); return !!(p && p.items.some((x) => x.id === vid)); },
+    add(id, it) { const a = this.all(); const p = a.find((x) => x.id === id); if (!p || !it || !it.id || p.items.some((x) => x.id === it.id)) return; p.items.push({ id: it.id, title: it.title, channel: it.channel, dur: it.dur, thumb: it.thumb, t: Date.now() }); p.items = p.items.slice(-1000); this.save(a); },
+    drop(id, vid) { const a = this.all(); const p = a.find((x) => x.id === id); if (p) { p.items = p.items.filter((x) => x.id !== vid); this.save(a); } },
+  };
+  YTC.subs = subs; YTC.later = later; YTC.fav = fav; YTC.playlists = pls;
+
+  /** Лист „Добави в плейлист“ – самостоятелен (ползва се и от „Инструменти“). */
+  YTC.pickPlaylist = function (it) {
+    if (!it || !it.id || !document.body) return;
+    const host = el('div'); host.id = 'ytc-plpick';
+    const r = host.attachShadow({ mode: 'open' });
+    r.appendChild(el('style', null, FEED_CSS));
+    const back = el('div', 'mback'), sh = el('div', 'msheet');
+    back.style.zIndex = sh.style.zIndex = '2147483647';
+    const close = () => host.remove();
+    back.addEventListener('click', close);
+    const draw = () => {
+      while (sh.firstChild) sh.removeChild(sh.firstChild);
+      sh.appendChild(el('div', 'mtitle', 'Добави в плейлист'));
+      for (const p of pls.all()) {
+        const on = p.items.some((x) => x.id === it.id);
+        const b = el('button', 'mrow', (on ? '✓ ' : '📂 ') + p.name + '  ·  ' + p.items.length);
+        b.addEventListener('click', () => {
+          if (on) { pls.drop(p.id, it.id); toastMsg('Махнато от „' + p.name + '“'); }
+          else { pls.add(p.id, it); toastMsg('Добавено в „' + p.name + '“'); }
+          close();
+        });
+        sh.appendChild(b);
+      }
+      const inp = el('input'); inp.placeholder = 'Нов плейлист – име'; inp.maxLength = 60;
+      const mk = el('button', 'mrow', '＋ Създай и добави');
+      const create = () => { const n = inp.value.trim(); if (!n) { inp.focus(); return; } const p = pls.create(n); pls.add(p.id, it); toastMsg('Добавено в „' + n + '“'); close(); };
+      mk.addEventListener('click', create);
+      inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') create(); });
+      sh.appendChild(inp); sh.appendChild(mk);
+    };
+    draw();
+    r.appendChild(back); r.appendChild(sh);
+    document.body.appendChild(host);
+  };
   let disCache = null;
   const dismissed = () => disCache || (disCache = new Set(LS.get(DIS_KEY, [])));
   function dismiss(id) { const a = LS.get(DIS_KEY, []); a.unshift(id); LS.set(DIS_KEY, a.slice(0, 2000)); disCache = null; }
@@ -827,6 +886,25 @@
   .srow{display:flex;align-items:center;gap:12px;padding:8px 12px}
   .srow img{width:40px;height:40px;border-radius:50%;background:#333;object-fit:cover}
   .srow span{flex:1}
+  .srch{display:block;width:calc(100% - 24px);margin:0 12px 12px;border:0;border-radius:20px;padding:9px 14px;font:15px inherit;outline:none}
+  .dark .srch{background:#272727;color:#f1f1f1}.light .srch{background:#f2f2f2;color:#0f0f0f}
+  .plrow{display:flex;align-items:center;gap:12px;width:100%;border:0;background:none;color:inherit;font:15px inherit;text-align:left;padding:10px 12px}
+  .plrow img{width:96px;height:54px;border-radius:8px;object-fit:cover;background:#333;flex:0 0 auto}
+  .plrow .ph{width:96px;height:54px;border-radius:8px;background:#333;flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-size:24px}
+  .plrow span{flex:1}.plrow small{display:block;opacity:.6;font-size:12.5px;margin-top:2px}
+  .msheet input{display:block;width:calc(100% - 36px);margin:6px 18px 10px;border:1px solid #444;border-radius:10px;background:#181818;color:#f1f1f1;padding:10px;font:16px inherit}
+  .stat{padding:0 12px 16px}
+  .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px}
+  .tile{border-radius:12px;padding:10px;text-align:center}
+  .dark .tile{background:#272727}.light .tile{background:#f2f2f2}
+  .tile b{display:block;font-size:19px}.tile span{font-size:11.5px;opacity:.7}
+  .bars{display:flex;align-items:flex-end;gap:6px;height:120px;margin:6px 0 4px}
+  .bars div{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%;font-size:10.5px}
+  .bars i{display:block;width:100%;border-radius:4px 4px 0 0;background:#ff0033;min-height:2px}
+  .bars small{opacity:.6;margin-top:3px}.bars em{font-style:normal;opacity:.8;margin-bottom:2px}
+  .stat h4{margin:14px 0 8px;font-size:15px}
+  .crow{display:flex;justify-content:space-between;padding:6px 0;font-size:14px}
+  .crow span:last-child{opacity:.7}
   .x{position:absolute;top:8px;right:8px;width:28px;height:28px;border-radius:50%;border:0;background:rgba(0,0,0,.6);color:#fff;font-size:15px;line-height:28px;padding:0}
   .th{position:relative;aspect-ratio:16/9;background:#222;overflow:hidden}
   .th img{width:100%;height:100%;object-fit:cover;display:block}
@@ -846,6 +924,8 @@
   .sk{height:0;padding-bottom:56.25%;background:linear-gradient(90deg,#1f1f1f,#2a2a2a,#1f1f1f);background-size:200% 100%;animation:sh 1.2s infinite;margin-bottom:60px}
   .light .sk{background:linear-gradient(90deg,#eee,#f6f6f6,#eee);background-size:200% 100%}
   @keyframes sh{to{background-position:-200% 0}}
+  .list>.hhead,.list>.srch,.list>.plrow,.list>.stat,.list>.msg,.list>.cont,.list>.more{grid-column:1/-1}
+  .contents{display:contents}
   @media(min-width:700px){.list{display:grid;grid-template-columns:1fr 1fr;gap:0 12px;padding:0 12px}.th{border-radius:12px}}
   `;
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -911,23 +991,32 @@
   }
 
   let activeChip = 'all';
+  const LOCAL_CHIP = /^(hist|subs|later|fav|pl|pl:.+|stats)$/;
+  function openChip(id) {
+    if (id === 'hist') showHistory(); else if (id === 'subs') showSubs(); else if (id === 'later') showLater();
+    else if (id === 'fav') showFav(); else if (id === 'pl') showPlaylists(); else if (id.startsWith('pl:')) showPlaylist(id.slice(3));
+    else if (id === 'stats') showStats(); else startFeed(true);
+  }
   function renderChips() {
     const chips = feedRoot.querySelector('.chips');
     while (chips.firstChild) chips.removeChild(chips.firstChild);
     const ints = LS.get(I_KEY, []);
     const add = (id, label) => {
-      const c = el('button', 'chip' + (activeChip === id ? ' on' : ''), label);
+      const c = el('button', 'chip' + (activeChip === id || (id === 'pl' && activeChip.startsWith('pl:')) ? ' on' : ''), label);
       c.addEventListener('click', () => {
         if (id === 'edit') { showPicker(); return; }
-        activeChip = id; renderChips();
-        if (id === 'hist') showHistory(); else if (id === 'subs') showSubs(); else if (id === 'later') showLater(); else startFeed(true);
+        activeChip = id; renderChips(); if (feedList) feedList.parentNode.scrollTop = 0;
+        openChip(id);
       });
       chips.appendChild(c);
     };
     add('all', 'За теб');
     add('subs', '📺 Абонаменти');
+    add('fav', '❤️ Любими');
+    add('pl', '📂 Плейлисти');
     add('later', '⏱ По-късно');
     add('hist', '🕘 История');
+    add('stats', '📊 Статистика');
     ints.forEach((i) => add('i:' + i, i));
     add('edit', ints.length ? '✎ Интереси' : '＋ Избери интереси');
     renderSorts();
@@ -936,7 +1025,7 @@
   function renderSorts() {
     const row = feedRoot.querySelector('.sorts');
     while (row.firstChild) row.removeChild(row.firstChild);
-    if (activeChip === 'hist' || activeChip === 'subs' || activeChip === 'later') { row.style.display = 'none'; return; }
+    if (LOCAL_CHIP.test(activeChip)) { row.style.display = 'none'; return; }
     row.style.display = '';
     for (const [k, l] of SORTS) {
       const c = el('button', 'chip' + (view.sort === k ? ' on' : ''), l);
@@ -949,25 +1038,54 @@
     row.appendChild(sel);
   }
 
+  // ---------- Списък с търсене (История, Любими, По-късно, плейлисти) ----------
+  const norm = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  function listView(o) {
+    while (feedList.firstChild) feedList.removeChild(feedList.firstChild);
+    const items = o.items;
+    if (o.before) feedList.appendChild(o.before);
+    if (!items.length) { feedList.appendChild(msg(o.empty[0], o.empty[1])); return; }
+    const head = el('div', 'hhead');
+    const h4 = el('h4', null, o.count(items.length));
+    head.appendChild(h4);
+    if (o.action) { const b = el('button', 'lnk', o.action[0]); b.addEventListener('click', o.action[1]); head.appendChild(b); }
+    feedList.appendChild(head);
+    const q = el('input', 'srch'); q.type = 'search'; q.placeholder = '🔎 Търси по заглавие или канал'; q.autocapitalize = 'off';
+    if (items.length > 3) feedList.appendChild(q);
+    const box = el('div', 'contents');
+    feedList.appendChild(box);
+    const draw = () => {
+      while (box.firstChild) box.removeChild(box.firstChild);
+      const words = norm(q.value).split(/\s+/).filter(Boolean);
+      const shown = words.length ? items.filter((x) => { const t = norm(x.title + ' ' + x.channel); return words.every((w) => t.includes(w)); }) : items;
+      h4.textContent = words.length ? 'Намерени: ' + shown.length : o.count(items.length);
+      if (!shown.length) { box.appendChild(el('div', 'more', 'Нищо не е намерено')); return; }
+      for (const x of shown.slice(0, 300)) {
+        const c = card(o.map ? o.map(x) : x);
+        if (o.remove) {
+          const del = el('button', 'x', '✕');
+          del.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); o.remove(x); items.splice(items.indexOf(x), 1); c.remove(); h4.textContent = o.count(items.length); });
+          c.appendChild(del);
+        }
+        box.appendChild(c);
+      }
+    };
+    let deb; q.addEventListener('input', () => { clearTimeout(deb); deb = setTimeout(draw, 150); });
+    draw();
+  }
+  const nVideos = (n) => n + ' ' + (n === 1 ? 'видео' : 'видеа');
+
   // ---------- История с прогрес ----------
   function showHistory() {
-    while (feedList.firstChild) feedList.removeChild(feedList.firstChild);
-    const h = (YTC.history ? YTC.history.all() : []);
-    if (!h.length) { feedList.appendChild(msg('Историята е празна', 'Видеата, които гледаш, ще се появяват тук – и ще продължават оттам, докъдето си стигнал.')); return; }
-    const head = el('div', 'hhead');
-    head.appendChild(el('h4', null, h.length + ' ' + (h.length === 1 ? 'видео' : 'видеа')));
-    const clr = el('button', 'lnk', 'Изчисти историята');
-    clr.addEventListener('click', () => { if (confirm('Да се изчисти ли цялата история на гледане?')) { YTC.history.clear(); showHistory(); } });
-    head.appendChild(clr);
-    feedList.appendChild(head);
-    for (const x of h) {
-      const c = card({ id: x.id, title: x.title, channel: x.channel, dur: x.len ? fmtDur(x.len) : '', views: '',
-        date: (x.done ? 'гледано' : x.pos ? 'спряно на ' + fmtDur(x.pos) : '') + ' • ' + ago(x.t) });
-      const del = el('button', 'x', '✕');
-      del.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); YTC.history.remove(x.id); c.remove(); });
-      c.appendChild(del);
-      feedList.appendChild(c);
-    }
+    listView({
+      items: (YTC.history ? YTC.history.all() : []).slice(),
+      empty: ['Историята е празна', 'Видеата, които гледаш, ще се появяват тук – и ще продължават оттам, докъдето си стигнал.'],
+      count: nVideos,
+      action: ['Изчисти историята', () => { if (confirm('Да се изчисти ли цялата история на гледане?')) { YTC.history.clear(); showHistory(); } }],
+      map: (x) => ({ id: x.id, title: x.title, channel: x.channel, dur: x.len ? fmtDur(x.len) : '', views: '',
+        date: (x.done ? 'гледано' : x.pos ? 'спряно на ' + fmtDur(x.pos) : '') + ' • ' + ago(x.t) }),
+      remove: (x) => YTC.history.remove(x.id),
+    });
   }
   function fmtDur(sec) {
     sec = Math.round(sec);
@@ -1064,6 +1182,9 @@
     back.addEventListener('click', close);
     sh.appendChild(el('div', 'mtitle', it.title));
     const act = (label, fn) => { const b = el('button', 'mrow', label); b.addEventListener('click', () => { close(); fn(); }); sh.appendChild(b); };
+    if (fav.has(it.id)) act('💔 Махни от „Любими“', () => { fav.remove(it.id); if (activeChip === 'fav') cardEl.remove(); toastMsg('Махнато от „Любими“'); });
+    else act('❤️ Добави в „Любими“', () => { fav.add(it); toastMsg('❤️ Добавено в „Любими“'); });
+    act('📂 Добави в плейлист', () => YTC.pickPlaylist(it));
     if (later.has(it.id)) act('⏱ Махни от „По-късно“', () => { later.remove(it.id); if (activeChip === 'later') cardEl.remove(); toastMsg('Махнато от „По-късно“'); });
     else act('⏱ Гледай по-късно', () => { later.add(it); toastMsg('✓ Запазено в „По-късно“'); });
     if (it.chId) {
@@ -1160,13 +1281,130 @@
 
   // ---------- Гледай по-късно ----------
   function showLater() {
+    listView({
+      items: later.all(),
+      empty: ['Списъкът е празен', 'Запазвай видеа с „⋮ → Гледай по-късно“ или от бутона „Инструменти“ при гледане.'],
+      count: (n) => nVideos(n) + ' за по-късно',
+      remove: (x) => later.remove(x.id),
+    });
+  }
+
+  // ---------- Любими ----------
+  function showFav() {
+    listView({
+      items: fav.all(),
+      empty: ['Нямаш любими видеа', 'Добавяй с „⋮ → Добави в „Любими““ на картите или с 🤍 от бутона „Инструменти“ при гледане.'],
+      count: (n) => n + ' ' + (n === 1 ? 'любимо видео' : 'любими видеа'),
+      remove: (x) => fav.remove(x.id),
+    });
+  }
+
+  // ---------- Плейлисти ----------
+  function showPlaylists() {
     while (feedList.firstChild) feedList.removeChild(feedList.firstChild);
-    const list = later.all();
-    if (!list.length) { feedList.appendChild(msg('Списъкът е празен', 'Запазвай видеа с „⋮ → Гледай по-късно“ или от бутона „Инструменти“ при гледане.')); return; }
-    const top = el('div', 'hhead');
-    top.appendChild(el('h4', null, list.length + ' ' + (list.length === 1 ? 'видео' : 'видеа') + ' за по-късно'));
-    feedList.appendChild(top);
-    for (const x of list) feedList.appendChild(card(x));
+    const list = pls.all();
+    const head = el('div', 'hhead');
+    head.appendChild(el('h4', null, list.length ? list.length + ' ' + (list.length === 1 ? 'плейлист' : 'плейлиста') : 'Плейлисти'));
+    const nb = el('button', 'lnk', '＋ Нов плейлист');
+    nb.addEventListener('click', () => { const n = (prompt('Име на плейлиста') || '').trim(); if (n) { pls.create(n); showPlaylists(); } });
+    head.appendChild(nb);
+    feedList.appendChild(head);
+    if (!list.length) { feedList.appendChild(msg('Нямаш плейлисти', 'Създай с „＋ Нов плейлист“ или от „⋮ → Добави в плейлист“ на всяко видео.')); return; }
+    for (const p of list) {
+      const b = el('button', 'plrow');
+      const f = p.items[0];
+      if (f) { const im = el('img'); im.alt = ''; im.loading = 'lazy'; im.src = f.thumb || 'https://i.ytimg.com/vi/' + f.id + '/mqdefault.jpg'; b.appendChild(im); }
+      else b.appendChild(el('div', 'ph', '📂'));
+      const t = el('span', null, p.name); t.appendChild(el('small', null, nVideos(p.items.length)));
+      b.appendChild(t);
+      b.addEventListener('click', () => { activeChip = 'pl:' + p.id; renderChips(); showPlaylist(p.id); });
+      feedList.appendChild(b);
+    }
+  }
+  function showPlaylist(id) {
+    const p = pls.get(id);
+    if (!p) { activeChip = 'pl'; renderChips(); showPlaylists(); return; }
+    const bar = el('div', 'hhead');
+    const bk = el('button', 'lnk', '‹ Плейлисти');
+    bk.addEventListener('click', () => { activeChip = 'pl'; renderChips(); showPlaylists(); });
+    bar.appendChild(bk);
+    const tools = el('div');
+    const play = el('button', 'lnk', '▶ Пусни');
+    play.style.marginRight = '14px';
+    play.addEventListener('click', () => { const q = pls.get(id); if (q && q.items.length) { YTC.playQueue(q.items.map((x) => x.id), q.name); } });
+    const ren = el('button', 'lnk', 'Преименувай');
+    ren.style.marginRight = '14px';
+    ren.addEventListener('click', () => { const n = (prompt('Ново име', p.name) || '').trim(); if (n) { pls.rename(id, n); showPlaylist(id); } });
+    const del = el('button', 'lnk', 'Изтрий');
+    del.style.color = '#ff453a';
+    del.addEventListener('click', () => { if (confirm('Да се изтрие ли плейлистът „' + p.name + '“?')) { pls.remove(id); activeChip = 'pl'; renderChips(); showPlaylists(); } });
+    if (p.items.length) tools.appendChild(play);
+    tools.appendChild(ren); tools.appendChild(del);
+    bar.appendChild(tools);
+    listView({
+      before: bar,
+      items: p.items.slice(),
+      empty: ['„' + p.name + '“ е празен', 'Добавяй видеа с „⋮ → Добави в плейлист“ или от „Инструменти“ при гледане.'],
+      count: (n) => p.name + ' · ' + nVideos(n),
+      remove: (x) => pls.drop(id, x.id),
+    });
+  }
+
+  // ---------- Пускане на списък едно след друго ----------
+  const Q_KEY = 'ytc-queue';
+  YTC.playQueue = function (ids, name) {
+    if (!ids || !ids.length) return;
+    try { sessionStorage.setItem(Q_KEY, JSON.stringify({ ids, i: 0, name: name || '' })); } catch (e) { /* */ }
+    YTC.go('/watch?v=' + ids[0]);
+  };
+  // в края на видеото от списъка – следващото от него (вместо автоматичното на YouTube)
+  document.addEventListener('ended', () => {
+    let q = null;
+    try { q = JSON.parse(sessionStorage.getItem(Q_KEY) || 'null'); } catch (e) { /* */ }
+    if (!q || !q.ids) return;
+    const cur = curVideo();
+    const i = q.ids.indexOf(cur);
+    if (i < 0) { try { sessionStorage.removeItem(Q_KEY); } catch (e) { /* */ } return; }
+    if (i + 1 >= q.ids.length) { try { sessionStorage.removeItem(Q_KEY); } catch (e) { /* */ } toastMsg('Плейлистът „' + q.name + '“ свърши'); return; }
+    q.i = i + 1;
+    try { sessionStorage.setItem(Q_KEY, JSON.stringify(q)); } catch (e) { /* */ }
+    toastMsg('▶ Следва ' + (i + 2) + '/' + q.ids.length + ' от „' + q.name + '“');
+    setTimeout(() => YTC.go('/watch?v=' + q.ids[i + 1]), 300);
+  }, true);
+
+  // ---------- Статистика ----------
+  function showStats() {
+    while (feedList.firstChild) feedList.removeChild(feedList.firstChild);
+    const st = YTC.watchStats ? YTC.watchStats() : null;
+    if (!st || !st.total) { feedList.appendChild(msg('Още няма статистика', 'Тук ще виждаш колко време гледаш всеки ден, колко видеа и кои канали гледаш най-много. Всичко остава само на това устройство.')); return; }
+    const box = el('div', 'stat');
+    const hm = (sec) => { const m = Math.round(sec / 60); return m < 60 ? m + ' мин' : Math.floor(m / 60) + ' ч ' + (m % 60) + ' м'; };
+    const tiles = el('div', 'tiles');
+    for (const [v, l] of [[hm(st.today), 'днес'], [hm(st.week / 7), 'средно на ден (7 дни)'], [String(st.todayVideos), 'видеа днес']]) {
+      const t = el('div', 'tile'); t.appendChild(el('b', null, v)); t.appendChild(el('span', null, l)); tiles.appendChild(t);
+    }
+    box.appendChild(tiles);
+    box.appendChild(el('h4', null, 'Последните 7 дни'));
+    const bars = el('div', 'bars');
+    const max = Math.max(60, ...st.days.map((d) => d.sec));
+    for (const d of st.days) {
+      const c = el('div');
+      c.appendChild(el('em', null, d.sec >= 60 ? Math.round(d.sec / 60) + '' : ''));
+      const i = el('i'); i.style.height = Math.round(d.sec / max * 100) + '%'; c.appendChild(i);
+      c.appendChild(el('small', null, d.label));
+      bars.appendChild(c);
+    }
+    box.appendChild(bars);
+    box.appendChild(el('div', 'sub', 'в минути · общо за 7 дни: ' + hm(st.week) + ' · за всички ' + st.daysCount + ' дни: ' + hm(st.total)));
+    if (st.channels.length) {
+      box.appendChild(el('h4', null, 'Най-гледани канали (30 дни)'));
+      for (const [n, sec] of st.channels.slice(0, 10)) { const r = el('div', 'crow'); r.appendChild(el('span', null, n)); r.appendChild(el('span', null, hm(sec))); box.appendChild(r); }
+    }
+    const clr = el('button', 'lnk', 'Изчисти статистиката');
+    clr.style.marginTop = '14px';
+    clr.addEventListener('click', () => { if (confirm('Да се изчисти ли статистиката?')) { YTC.clearWatchStats(); showStats(); } });
+    box.appendChild(clr);
+    feedList.appendChild(box);
   }
 
   function skeleton(n) { for (let i = 0; i < n; i++) feedList.appendChild(el('div', 'sk')); }
@@ -1255,7 +1493,7 @@
   function msg(h, p) { const b = el('div', 'msg'); b.appendChild(el('h2', null, h)); b.appendChild(el('p', null, p)); return b; }
 
   async function loadMore() {
-    if (!feedList || feedState.loading || feedState.done || /^(hist|subs|later)$/.test(activeChip)) return;
+    if (!feedList || feedState.loading || feedState.done || LOCAL_CHIP.test(activeChip)) return;
     if (!feedState.seeds.length && !activeChip.startsWith('i:') && !LS.get(I_KEY, []).length) { feedState.done = true; return; }
     feedState.loading = true;
     const m = el('div', 'more', 'Зареждане…'); feedList.appendChild(m);
@@ -1511,13 +1749,43 @@
   ['play', 'playing', 'pause', 'ended', 'emptied'].forEach((t) => document.addEventListener(t, () => setTimeout(reportMedia, 50), true));
 
   // iOS приложение: при излизане iOS понякога спира видеото. Ако не си го спрял ти – пускаме го отново.
-  let wasPlaying = false;
-  document.addEventListener('playing', () => { wasPlaying = true; window.__ytcUserPaused = false; }, true);
+  // Само в първите секунди след излизането: пауза по-късно (заключен екран, слушалки, обаждане) е решение на потребителя.
+  const BG_GRACE = 3000;
+  let bgVal = window.__ytcBg, bgAt = bgVal ? Date.now() : 0;
+  try {
+    Object.defineProperty(window, '__ytcBg', { configurable: true,
+      get: () => bgVal, set: (x) => { if (x && !bgVal) bgAt = Date.now(); bgVal = x; } });
+  } catch (e) { /* */ }
+  const justLeft = () => bgVal && Date.now() - bgAt < BG_GRACE;
+  let wasPlaying = false, lastPauseAt = 0, lastPlayAt = 0, lastCmdAt = 0;
+  const userPause = () => { window.__ytcUserPaused = true; lastCmdAt = Date.now(); };
+  const userPlay = () => { window.__ytcUserPaused = false; lastCmdAt = Date.now(); };
+  // Заключеният екран на iOS праща командите и директно към страницата (Media Session на YouTube).
+  // Обвиваме обработчиците, за да знаем, че паузата е от потребителя и да не я „поправяме“.
+  try {
+    const ms = navigator.mediaSession;
+    if (window.YTCApp && ms && typeof ms.setActionHandler === 'function' && !ms.__ytcWrapped) {
+      const orig = ms.setActionHandler.bind(ms);
+      const mark = (a) => { if (a === 'pause' || a === 'stop') userPause(); else if (a === 'play') userPlay(); };
+      ms.setActionHandler = function (action, fn) {
+        if (typeof fn !== 'function') return orig(action, fn);
+        return orig(action, function (d) { mark(action); return fn.apply(this, arguments); });
+      };
+      ms.__ytcWrapped = true;
+      // ако YouTube не е задал свои – наши (иначе WebKit спира видеото, без да знаем)
+      const vid = () => document.querySelector('.html5-video-player video, video');
+      orig('pause', () => { userPause(); const v = vid(); if (v) v.pause(); });
+      orig('play', () => { userPlay(); const v = vid(); if (v) v.play().catch(() => {}); });
+    }
+  } catch (e) { /* */ }
+  document.addEventListener('playing', () => { wasPlaying = true; lastPlayAt = Date.now(); if (Date.now() - lastCmdAt > 1500) window.__ytcUserPaused = false; }, true);
   document.addEventListener('pause', (e) => {
     const v = e.target;
-    if (!window.__ytcBg || window.__ytcUserPaused || !wasPlaying || !S.backgroundPlay || v.ended) { wasPlaying = !v.paused; return; }
+    lastPauseAt = Date.now();
+    if (!bgVal || window.__ytcUserPaused || !wasPlaying || !S.backgroundPlay || v.ended) { wasPlaying = !v.paused; return; }
+    if (!justLeft()) { window.__ytcUserPaused = true; wasPlaying = false; return; }   // пауза от заключения екран / системата
     if (document.querySelector('.ad-showing')) return;
-    setTimeout(() => { if (window.__ytcBg && !window.__ytcUserPaused && v.paused) v.play().catch(() => {}); }, 200);
+    setTimeout(() => { if (bgVal && !window.__ytcUserPaused && v.paused) v.play().catch(() => {}); }, 200);
   }, true);
   // докосване на пауза в самата страница = решение на потребителя
   document.addEventListener('click', (e) => {
@@ -1525,14 +1793,19 @@
       setTimeout(() => { const v = document.querySelector('.html5-video-player video'); if (v && v.paused) window.__ytcUserPaused = true; }, 300);
     }
   }, true);
-  // команди от известието / заключения екран
+  // команди от известието / заключения екран (през приложението)
   YTC.mediaCommand = function (cmd) {
     const v = document.querySelector('.html5-video-player video, video');
     if (!v) return;
-    // команда от заключения екран / известието = решение на потребителя
-    window.__ytcUserPaused = cmd === 'pause' || (cmd === 'toggle' && !v.paused);
-    if (cmd === 'play') v.play().catch(() => {}); else if (cmd === 'pause') v.pause();
-    else if (cmd === 'toggle') { if (v.paused) v.play().catch(() => {}); else v.pause(); }
+    const now = Date.now();
+    if (cmd === 'toggle') {
+      // същото натискане може вече да е стигнало до страницата директно – не го обръщаме обратно
+      if (v.paused && now - lastPauseAt < 1000) { userPause(); return; }
+      if (!v.paused && now - lastPlayAt < 1000) { userPlay(); return; }
+      cmd = v.paused ? 'play' : 'pause';
+    }
+    if (cmd === 'pause') { userPause(); if (!v.paused) v.pause(); }
+    else if (cmd === 'play') { userPlay(); if (v.paused) v.play().catch(() => {}); }
   };
 
   // ======================================================== Бутон „Следвай“ (вместо „Абониране“, което иска профил)
@@ -1855,7 +2128,8 @@
   .sw i:after{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;transition:transform .2s}
   .sw input:checked+i{background:#30d158}.sw input:checked+i:after{transform:translateX(20px)}
   .info{margin:12px 4px 0;color:#8e8e93;font-size:13px}
-  .acts{display:flex;gap:8px;margin-bottom:4px}
+  .acts{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:4px}
+  .acts .a{flex:1 1 calc(50% - 4px)}
   .a{flex:1;border:0;border-radius:12px;background:#2c2c2e;color:#f2f2f7;font:600 14px inherit;padding:12px 6px}
   .a.on{background:#30d158;color:#000}
   .ch{display:flex;gap:10px;align-items:baseline;width:100%;border:0;background:#2c2c2e;color:#f2f2f7;font:14px inherit;text-align:left;padding:11px 12px;border-radius:10px;margin-top:6px}
@@ -1920,6 +2194,19 @@
       setL();
     });
     acts.appendChild(lb);
+    const hb = el('button', 'a', '');
+    const setH = () => { const on = YTC.fav && YTC.fav.has(curId); hb.textContent = on ? '❤️ В „Любими“' : '🤍 Любими'; hb.classList.toggle('on', !!on); };
+    setH();
+    hb.addEventListener('click', () => {
+      if (!YTC.fav) return;
+      if (YTC.fav.has(curId)) YTC.fav.remove(curId);
+      else YTC.fav.add({ id: curId, title: pageTitle(), channel: pageChannel(), dur: video() && isFinite(video().duration) ? fmt(video().duration) : '' });
+      setH();
+    });
+    acts.appendChild(hb);
+    const pb0 = el('button', 'a', '📂 Плейлист');
+    pb0.addEventListener('click', () => { close(); if (YTC.pickPlaylist) YTC.pickPlaylist({ id: curId, title: pageTitle(), channel: pageChannel(), dur: video() && isFinite(video().duration) ? fmt(video().duration) : '' }); });
+    acts.appendChild(pb0);
     const fb = el('button', 'a', '📺 Следвай канала');
     acts.appendChild(fb);
     if (YTC.videoOwner && YTC.subs) {
@@ -2013,6 +2300,991 @@
     if (h && h.pos > 15 && !h.done) sh.appendChild(el('div', 'info', 'Последно спря на ' + fmt(h.pos) + '.'));
     root.appendChild(back); root.appendChild(sh);
   }
+})();
+
+/*
+ * YT Контрол – звук, жестове и статистика:
+ *   • нормализиране на звука (тихите видеа по-силно, силните по-тихо) – Web Audio
+ *   • жестове върху видеото: плъзгане настрани = превъртане, нагоре/надолу вляво = яркост, вдясно = сила на звука,
+ *     задържане = 2× скорост, докато държиш
+ *   • статистика: време за гледане по дни, брой видеа, най-гледани канали (само на устройството)
+ */
+(function () {
+  'use strict';
+  const YTC = (globalThis.YTC = globalThis.YTC || {});
+  let S = {};
+  const LS = {
+    get(k, d) { try { const v = JSON.parse(localStorage.getItem(k) || 'null'); return v == null ? d : v; } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* */ } },
+  };
+  const video = () => document.querySelector('.html5-video-player video') || document.querySelector('video');
+  const player = () => document.querySelector('.html5-video-player');
+  const inAd = () => !!document.querySelector('.html5-video-player.ad-showing, .html5-video-player.ad-interrupting');
+  const curVideo = () => location.pathname === '/watch' ? (location.search.match(/[?&]v=([\w-]{6,})/) || [])[1] : null;
+  const pageChannel = () => ((document.querySelector('ytm-slim-owner-renderer .slim-owner-channel-name, ytm-slim-owner-renderer h3, .slim-owner-icon-and-title') || {}).textContent || '').trim().split('\n')[0];
+  const playing = (v) => !!(v && !v.paused && !v.ended && v.readyState > 1);
+  const isIOS = () => (window.YTCApp && window.YTCApp.platform === 'ios') || /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const fmt = (sec) => {
+    sec = Math.max(0, Math.floor(sec));
+    const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
+    return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(s).padStart(2, '0');
+  };
+  const dayKey = (t) => { const d = new Date(t || Date.now()); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+  YTC.dayKey = dayKey;
+
+  // ======================================================== Статистика
+  const ST_KEY = 'ytc-watch-stats';
+  let st = null, stDirty = 0, lastTick = 0;
+  function stLoad() { if (!st) { st = LS.get(ST_KEY, null); if (!st || !st.days) st = { days: {} }; } return st; }
+  function stSave() { if (st) LS.set(ST_KEY, st); stDirty = 0; }
+  function statTick(now) {
+    const v = video();
+    const dt = lastTick ? Math.min(5, (now - lastTick) / 1000) : 0;
+    lastTick = now;
+    if (!dt || !S.enabled || S.watchStats === false || !playing(v) || inAd() || !curVideo()) return;
+    const s = stLoad(), k = dayKey(now);
+    const d = s.days[k] || (s.days[k] = { s: 0, v: [], c: {} });
+    d.s += dt;
+    const id = curVideo();
+    if (d.v.indexOf(id) < 0) d.v.push(id);
+    const ch = pageChannel();
+    if (ch) d.c[ch] = (d.c[ch] || 0) + dt;
+    if (++stDirty >= 10) {
+      const keys = Object.keys(s.days).sort();
+      while (keys.length > 120) delete s.days[keys.shift()];
+      stSave();
+    }
+  }
+  YTC.watchStats = function () {
+    const s = stLoad();
+    const out = { today: 0, todayVideos: 0, week: 0, total: 0, daysCount: Object.keys(s.days).length, days: [], channels: [] };
+    const names = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+    for (let i = 6; i >= 0; i--) {
+      const t = Date.now() - i * 86400e3, d = s.days[dayKey(t)];
+      const sec = d ? d.s : 0;
+      out.days.push({ sec, label: i === 0 ? 'днес' : names[new Date(t).getDay()] });
+      out.week += sec;
+    }
+    const td = s.days[dayKey()];
+    if (td) { out.today = td.s; out.todayVideos = td.v.length; }
+    const ch = {}, since = dayKey(Date.now() - 30 * 86400e3);
+    for (const k in s.days) {
+      out.total += s.days[k].s;
+      if (k >= since) for (const n in s.days[k].c) ch[n] = (ch[n] || 0) + s.days[k].c[n];
+    }
+    out.channels = Object.entries(ch).sort((a, b) => b[1] - a[1]);
+    return out;
+  };
+  YTC.clearWatchStats = () => { st = { days: {} }; stSave(); };
+  window.addEventListener('pagehide', stSave);
+
+  // ======================================================== Нормализиране на звука
+  // video → предварително усилване (по силата на клипа) → компресор → компенсация → ограничител → сила на звука → изход
+  const chains = new WeakMap();
+  let ctx = null, warned = false, lastNormId = '';
+  function loudnessDb() {
+    try {
+      const p = document.getElementById('movie_player');
+      const r = p && typeof p.getPlayerResponse === 'function' ? p.getPlayerResponse() : null;
+      const a = r && r.playerConfig && r.playerConfig.audioConfig;
+      if (a && typeof a.loudnessDb === 'number') return a.loudnessDb;
+    } catch (e) { /* */ }
+    return null;
+  }
+  function chainFor(v, create) {
+    let c = chains.get(v);
+    if (c || !create) return c || null;
+    // потоци, които не идват през MediaSource (напр. HLS на iPhone), Web Audio не може да чете – иначе звукът изчезва
+    if (!/^blob:/.test(v.currentSrc || v.src || '')) {
+      if (!warned) { warned = true; if (YTC.toast) YTC.toast('🔈 Нормализирането не се поддържа за този вид видео поток'); }
+      return null;
+    }
+    try {
+      if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (ctx.state !== 'running') return null;   // без докосване браузърът не пуска звука – иначе видеото онемява
+      const src = ctx.createMediaElementSource(v);
+      const pre = ctx.createGain(), comp = ctx.createDynamicsCompressor(), make = ctx.createGain(), lim = ctx.createDynamicsCompressor(), vol = ctx.createGain();
+      comp.threshold.value = -26; comp.knee.value = 12; comp.ratio.value = 4; comp.attack.value = 0.01; comp.release.value = 0.3;
+      make.gain.value = 1.7;
+      lim.threshold.value = -2; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.002; lim.release.value = 0.1;
+      pre.connect(comp); comp.connect(make); make.connect(lim); lim.connect(vol); vol.connect(ctx.destination);
+      c = { src, pre, vol, on: false };
+      chains.set(v, c);
+      return c;
+    } catch (e) { return null; }
+  }
+  function route(c, on) {
+    if (!c || c.on === on) return;
+    try { c.src.disconnect(); c.src.connect(on ? c.pre : c.vol); c.on = on; } catch (e) { /* */ }
+  }
+  function normTick() {
+    const v = video();
+    if (!v) return;
+    const want = !!(S.enabled && S.normalizeAudio);
+    const c = chainFor(v, want);
+    if (!c) return;
+    route(c, want);
+    if (ctx && ctx.state === 'suspended' && playing(v)) ctx.resume().catch(() => {});
+    const id = curVideo();
+    if (want && id && id !== lastNormId) {
+      const db = loudnessDb();
+      if (db !== null) {
+        lastNormId = id;
+        // loudnessDb > 0 = по-силно от нормата на YouTube; връщаме го към нормата (±10 dB)
+        c.pre.gain.value = Math.pow(10, Math.max(-10, Math.min(10, -db)) / 20);
+      }
+    }
+  }
+  // браузърите пускат Web Audio само след докосване
+  const unlock = () => {
+    if (!S.enabled || !S.normalizeAudio) return;
+    try {
+      if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (ctx.state !== 'running') ctx.resume().then(normTick).catch(() => {});
+      else normTick();
+    } catch (e) { /* */ }
+  };
+  document.addEventListener('touchend', unlock, true);
+  document.addEventListener('click', unlock, true);
+  // при излизане от приложението (iOS) – опит звукът да не спре
+  try { if (window.AudioContext) document.addEventListener('playing', () => { if (ctx && ctx.state !== 'running') ctx.resume().catch(() => {}); }, true); } catch (e) { /* */ }
+
+  // ======================================================== Жестове върху видеото
+  let ovl = null, ovlTimer = 0, dim = null;
+  function hint(text) {
+    const p = player();
+    if (!p) return;
+    if (!ovl || !p.contains(ovl)) {
+      ovl = document.createElement('div');
+      ovl.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:60;pointer-events:none;' +
+        'background:rgba(0,0,0,.72);color:#fff;font:600 17px Roboto,-apple-system,sans-serif;padding:10px 18px;border-radius:22px;white-space:nowrap;transition:opacity .2s';
+      p.appendChild(ovl);
+    }
+    ovl.textContent = text;
+    ovl.style.opacity = '1';
+    clearTimeout(ovlTimer);
+    ovlTimer = setTimeout(() => { if (ovl) ovl.style.opacity = '0'; }, 700);
+  }
+  function setDim(x) {
+    const p = player();
+    if (!p) return;
+    if (!dim || !p.contains(dim)) {
+      dim = document.createElement('div');
+      dim.style.cssText = 'position:absolute;inset:0;background:#000;pointer-events:none;z-index:59;opacity:0';
+      p.appendChild(dim);
+    }
+    dim.style.opacity = String(x);
+  }
+  let g = null, suppressClick = 0, lastVid = '';
+  function onStart(e) {
+    if (!S.enabled || S.gestures === false || e.touches.length !== 1) { g = null; return; }
+    const p = player(), v = video();
+    if (!p || !v || inAd() || !e.target.closest || !e.target.closest('.html5-video-player')) { g = null; return; }
+    if (e.target.closest('.ytp-progress-bar, .ytm-progress-bar, [role="slider"], .player-controls-bottom, button')) { g = null; return; }
+    const r = p.getBoundingClientRect(), t = e.touches[0];
+    if (curVideo() !== lastVid) { lastVid = curVideo(); setDim(0); }
+    g = { x: t.clientX, y: t.clientY, r, axis: '', v, t0: v.currentTime, right: t.clientX > r.left + r.width / 2,
+      dim: dim ? +dim.style.opacity || 0 : 0, vol: 1, hold: 0, rate: 1 };
+    const c = chains.get(v);
+    g.vol = c && c.vol ? c.vol.gain.value : v.volume;
+    g.hold = setTimeout(() => {
+      if (!g || g.axis) return;
+      g.axis = 'hold'; g.rate = v.playbackRate;
+      v.playbackRate = 2; hint('2× ▶▶');
+    }, 550);
+  }
+  function onMove(e) {
+    if (!g) return;
+    const t = e.touches[0], dx = t.clientX - g.x, dy = t.clientY - g.y;
+    if (!g.axis) {
+      if (Math.abs(dx) < 16 && Math.abs(dy) < 16) return;
+      clearTimeout(g.hold);
+      g.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+    }
+    if (g.axis === 'hold') return;
+    if (e.cancelable) e.preventDefault();
+    if (g.axis === 'x') {
+      const d = isFinite(g.v.duration) ? g.v.duration : 0;
+      if (!d) return;
+      g.seek = Math.max(0, Math.min(d - 1, g.t0 + dx / g.r.width * Math.min(180, Math.max(60, d / 4))));
+      const delta = Math.round(g.seek - g.t0);
+      hint((delta >= 0 ? '⏩ +' : '⏪ −') + Math.abs(delta) + ' с  (' + fmt(g.seek) + ')');
+    } else {
+      const k = -dy / (g.r.height * 0.9);
+      if (!g.right) {
+        const x = Math.max(0, Math.min(0.85, g.dim - k));
+        setDim(x); hint('☀️ ' + Math.round((1 - x / 0.85) * 100) + '%');
+      } else {
+        const c = chains.get(g.v);
+        if (c && c.vol) { const x = Math.max(0, Math.min(2, g.vol + k * 1.5)); c.vol.gain.value = x; hint('🔊 ' + Math.round(x * 100) + '%'); }
+        else if (!isIOS()) { const x = Math.max(0, Math.min(1, g.vol + k)); g.v.volume = x; hint('🔊 ' + Math.round(x * 100) + '%'); }
+        else hint('🔊 с бутоните на телефона');
+      }
+    }
+  }
+  function onEnd() {
+    if (!g) return;
+    clearTimeout(g.hold);
+    if (g.axis === 'x' && typeof g.seek === 'number') g.v.currentTime = g.seek;
+    if (g.axis === 'hold') g.v.playbackRate = g.rate || 1;
+    if (g.axis) suppressClick = Date.now();
+    g = null;
+  }
+  document.addEventListener('touchstart', onStart, { capture: true, passive: true });
+  document.addEventListener('touchmove', onMove, { capture: true, passive: false });
+  document.addEventListener('touchend', onEnd, true);
+  document.addEventListener('touchcancel', onEnd, true);
+  // след жест докосването не трябва да показва/скрива контролите или да спира видеото
+  document.addEventListener('click', (e) => {
+    if (suppressClick && Date.now() - suppressClick < 450) { suppressClick = 0; e.stopPropagation(); e.preventDefault(); }
+  }, true);
+
+  // ======================================================== Цикъл
+  YTC.mediaApply = (s) => { S = s; normTick(); };
+  setInterval(() => { statTick(Date.now()); normTick(); }, 1000);
+})();
+
+/*
+ * YT Контрол – родителски контрол „Мисловна пауза“.
+ *   • на всеки N минути гледане видеото спира и детето решава задачи (математика, логика, памет…)
+ *   • задачите се избират според възрастта; родителят избира видовете, трудността, колко задачи и през колко минути
+ *   • решиш ли ги – гледаш нататък; не можеш ли – няма гледане
+ *   • твърд дневен лимит: след него гледането спира, каквото и да се решава (само родителят може да добави време)
+ *   • всичко е защитено с ПИН на родителя; задачите се създават на устройството, без интернет и без да се изпраща нищо
+ */
+(function () {
+  'use strict';
+  const YTC = (globalThis.YTC = globalThis.YTC || {});
+  const LS = {
+    get(k, d) { try { const v = JSON.parse(localStorage.getItem(k) || 'null'); return v == null ? d : v; } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* */ } },
+  };
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  const video = () => document.querySelector('.html5-video-player video') || document.querySelector('video');
+  const onWatch = () => location.pathname === '/watch';
+  const dayKey = () => (YTC.dayKey ? YTC.dayKey() : new Date().toISOString().slice(0, 10));
+
+  // ======================================================== Случайни помощници
+  const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+  const pick = (a) => a[Math.floor(Math.random() * a.length)];
+  const shuffle = (a) => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  const sample = (a, n) => shuffle(a).slice(0, n);
+  function numChoices(ans, spread) {
+    const set = new Set([ans]);
+    const sp = Math.max(2, spread || Math.ceil(Math.abs(ans) * 0.25) + 2);
+    let guard = 0;
+    while (set.size < 4 && guard++ < 100) {
+      const d = rnd(1, sp) * (Math.random() < 0.5 ? -1 : 1);
+      const x = ans + d;
+      if (x >= 0 || ans < 0) set.add(x);
+    }
+    let k = 1; while (set.size < 4) set.add(ans + sp + k++);
+    return shuffle([...set]).map(String);
+  }
+  const NAMES = ['Ани', 'Боби', 'Вики', 'Гошо', 'Деси', 'Иво', 'Мила', 'Нико', 'Рая', 'Сашо', 'Тея', 'Яни'];
+  const EMO = {
+    плодове: ['🍎', '🍌', '🍇', '🍓', '🍐', '🍒', '🍑', '🍋'],
+    животни: ['🐶', '🐱', '🐰', '🐻', '🐸', '🐵', '🐷', '🦊'],
+    превозни: ['🚗', '🚌', '🚲', '🚂', '✈️', '🚀', '🚜', '⛵'],
+    спорт: ['⚽', '🏀', '🎾', '🏐', '🏈', '⚾'],
+    форми: ['🔴', '🔵', '🟢', '🟡', '🟣', '🟠'],
+    време: ['☀️', '🌧️', '❄️', '⛅', '🌈', '⚡'],
+  };
+  const WORDS = {
+    'животни': ['куче', 'котка', 'кон', 'крава', 'лъв', 'заек', 'мечка', 'лисица', 'вълк', 'коза'],
+    'плодове': ['ябълка', 'круша', 'банан', 'череша', 'праскова', 'слива', 'портокал', 'грозде'],
+    'зеленчуци': ['домат', 'краставица', 'морков', 'картоф', 'чушка', 'лук', 'тиква', 'зеле'],
+    'мебели': ['стол', 'маса', 'легло', 'гардероб', 'диван', 'шкаф', 'бюро', 'рафт'],
+    'превозни средства': ['кола', 'автобус', 'влак', 'самолет', 'кораб', 'колело', 'трамвай', 'камион'],
+    'цветове': ['червено', 'синьо', 'зелено', 'жълто', 'лилаво', 'оранжево', 'розово', 'бяло'],
+    'музикални инструменти': ['пиано', 'китара', 'тъпан', 'цигулка', 'флейта', 'тромпет', 'гайда', 'акордеон'],
+    'птици': ['врабче', 'орел', 'гълъб', 'щъркел', 'папагал', 'бухал', 'лястовица', 'кос'],
+  };
+
+  // ======================================================== Генератори на задачи
+  // Всеки връща { q, vis?, svg?, memo?, ans, ch? (избор), ex (обяснение) }. L = ниво 1…6.
+  const G = {};
+
+  G.count = (L) => {
+    const kind = pick(Object.keys(EMO).slice(0, 3)), e = pick(EMO[kind]);
+    if (L >= 2 && Math.random() < 0.5) {
+      const a = rnd(1, L >= 2 ? 6 : 4), b = rnd(1, L >= 2 ? 4 : 3);
+      return { q: 'Колко са всички заедно?', vis: e.repeat(a) + '  +  ' + e.repeat(b), ans: a + b, ch: numChoices(a + b, 2), ex: a + ' и още ' + b + ' прави ' + (a + b) + '.' };
+    }
+    if (Math.random() < 0.4) {
+      const e2 = pick(EMO[kind].filter((x) => x !== e));
+      let a = rnd(1, 3 + L * 2), b = rnd(1, 3 + L * 2); if (a === b) b = a + 1;
+      return { q: 'Къде има повече?', vis: e.repeat(a) + '\n' + e2.repeat(b), ans: a > b ? e : e2, ch: [e, e2], ex: 'Има ' + a + ' ' + e + ' и ' + b + ' ' + e2 + '.' };
+    }
+    const n = rnd(2, L >= 2 ? 10 : 6);
+    return { q: 'Колко са?', vis: e.repeat(n), ans: n, ch: numChoices(n, 2), ex: 'Преброй ги едно по едно: те са ' + n + '.' };
+  };
+
+  G.math = (L) => {
+    let a, b, q, ans, ex;
+    switch (Math.min(L, 6)) {
+      case 1: a = rnd(1, 6); b = rnd(1, 10 - a);
+        if (Math.random() < 0.5) { q = a + ' + ' + b; ans = a + b; } else { a = a + b; q = a + ' − ' + b; ans = a - b; }
+        return { q: 'Колко е ' + q + '?', ans, ch: numChoices(ans, 3), ex: q + ' = ' + ans };
+      case 2: a = rnd(3, 15); b = rnd(2, 20 - a);
+        if (Math.random() < 0.5) { q = a + ' + ' + b; ans = a + b; } else { a = a + b; q = a + ' − ' + b; ans = a - b; }
+        return { q: 'Колко е ' + q + '?', ans, ch: numChoices(ans, 4), ex: q + ' = ' + ans };
+      case 3: {
+        const t = rnd(0, 2);
+        if (t === 0) { a = rnd(2, 10); b = rnd(2, 10); return { q: 'Колко е ' + a + ' × ' + b + '?', ans: a * b, ex: a + ' × ' + b + ' = ' + (a * b) + ' (' + b + ' събрано ' + a + ' пъти)' }; }
+        a = rnd(15, 80); b = rnd(5, 99 - a);
+        if (t === 1) return { q: 'Колко е ' + a + ' + ' + b + '?', ans: a + b, ex: 'Първо десетиците, после единиците: ' + a + ' + ' + b + ' = ' + (a + b) };
+        return { q: 'Колко е ' + (a + b) + ' − ' + b + '?', ans: a, ex: (a + b) + ' − ' + b + ' = ' + a };
+      }
+      case 4: {
+        const t = rnd(0, 3);
+        if (t === 0) { b = rnd(3, 9); ans = rnd(3, 12); return { q: 'Колко е ' + (b * ans) + ' : ' + b + '?', ans, ex: 'Защото ' + b + ' × ' + ans + ' = ' + (b * ans) }; }
+        if (t === 1) { a = rnd(12, 49); b = rnd(3, 9); return { q: 'Колко е ' + a + ' × ' + b + '?', ans: a * b, ex: a + ' × ' + b + ' = ' + (Math.floor(a / 10) * 10) + '×' + b + ' + ' + (a % 10) + '×' + b + ' = ' + (a * b) }; }
+        if (t === 2) { a = rnd(15, 70); ans = rnd(12, 60); return { q: '? + ' + a + ' = ' + (a + ans) + '\nКое е числото?', ans, ex: (a + ans) + ' − ' + a + ' = ' + ans }; }
+        a = rnd(120, 600); b = rnd(40, 380);
+        return { q: 'Колко е ' + (a + b) + ' − ' + b + '?', ans: a, ex: (a + b) + ' − ' + b + ' = ' + a };
+      }
+      case 5: {
+        const t = rnd(0, 3);
+        if (t === 0) { a = rnd(2, 12); b = rnd(2, 6); const c = rnd(2, 9); return { q: 'Колко е ' + a + ' + ' + b + ' × ' + c + '?', ans: a + b * c, ex: 'Първо умножението: ' + b + ' × ' + c + ' = ' + (b * c) + ', после ' + a + ' + ' + (b * c) + ' = ' + (a + b * c) }; }
+        if (t === 1) { const d = pick([2, 3, 4, 5, 10]); ans = rnd(2, 12); return { q: 'Колко е 1/' + d + ' от ' + (ans * d) + '?', ans, ex: (ans * d) + ' : ' + d + ' = ' + ans }; }
+        if (t === 2) { const p = pick([10, 20, 25, 50]); const base = pick([40, 60, 80, 120, 200, 360].filter((x) => x * p % 100 === 0)); return { q: 'Колко е ' + p + '% от ' + base + '?', ans: base * p / 100, ex: p + '% = ' + p + '/100, а ' + base + ' × ' + p + ' : 100 = ' + (base * p / 100) }; }
+        a = rnd(2, 15); b = rnd(a + 2, 25); return { q: 'Колко е ' + a + ' − ' + b + '?', ans: a - b, ex: 'Отиваме под нулата: ' + a + ' − ' + b + ' = ' + (a - b) };
+      }
+      default: {
+        const t = rnd(0, 3);
+        if (t === 0) { const x = rnd(2, 12), k = rnd(2, 7), c = rnd(1, 20); return { q: 'Реши: ' + k + 'x + ' + c + ' = ' + (k * x + c) + '\nx = ?', ans: x, ex: k + 'x = ' + (k * x + c) + ' − ' + c + ' = ' + (k * x) + ', значи x = ' + (k * x) + ' : ' + k + ' = ' + x }; }
+        if (t === 1) { const base = pick([2, 3, 5]), e = base === 2 ? rnd(4, 8) : rnd(2, 4); return { q: 'Колко е ' + base + ' на степен ' + e + '?', ans: Math.pow(base, e), ex: Array(e).fill(base).join(' × ') + ' = ' + Math.pow(base, e) }; }
+        if (t === 2) { const n = [rnd(4, 20), rnd(4, 20), rnd(4, 20)]; const s = n[0] + n[1] + n[2]; const fix = (3 - s % 3) % 3; n[2] += fix; return { q: 'Средно аритметично на ' + n.join(', ') + '?', ans: (s + fix) / 3, ex: 'Сбор ' + (s + fix) + ', разделен на 3 = ' + ((s + fix) / 3) }; }
+        const p = pick([10, 20, 25]), price = pick([40, 60, 80, 120, 150, 200].filter((x) => x * p % 100 === 0)); return { q: 'Нещо струва ' + price + ' лв. Поевтинява с ' + p + '%. Колко струва сега?', ans: price * (100 - p) / 100, ex: p + '% от ' + price + ' е ' + (price * p / 100) + ', а ' + price + ' − ' + (price * p / 100) + ' = ' + (price * (100 - p) / 100) };
+      }
+    }
+  };
+
+  G.word = (L) => {
+    const [n1, n2] = sample(NAMES, 2);
+    const t = Math.min(L, 6);
+    if (t <= 2) {
+      const things = pick(['бонбона', 'балона', 'стикера', 'топки', 'книжки', 'колички']);
+      const a = rnd(4, t === 1 ? 9 : 15), b = rnd(1, a - 1);
+      if (Math.random() < 0.5) return { q: n1 + ' има ' + a + ' ' + things + '. Даде ' + b + ' на ' + n2 + '. Колко ' + things + ' останаха на ' + n1 + '?', ans: a - b, ch: numChoices(a - b, 3), ex: a + ' − ' + b + ' = ' + (a - b) };
+      return { q: n1 + ' има ' + a + ' ' + things + ', а ' + n2 + ' – ' + b + '. Колко имат общо?', ans: a + b, ch: numChoices(a + b, 3), ex: a + ' + ' + b + ' = ' + (a + b) };
+    }
+    if (t === 3) {
+      const k = rnd(3, 8), m = rnd(3, 9), w = pick([['кутии', 'молива'], ['чинии', 'ябълки'], ['реда', 'стола'], ['пакета', 'бисквити']]);
+      if (Math.random() < 0.5) return { q: 'Има ' + k + ' ' + w[0] + ' с по ' + m + ' ' + w[1] + '. Колко ' + w[1] + ' има общо?', ans: k * m, ex: k + ' × ' + m + ' = ' + (k * m) };
+      return { q: n1 + ' раздели ' + (k * m) + ' ' + w[1] + ' поравно в ' + k + ' ' + w[0] + '. По колко има във всяка?', ans: m, ex: (k * m) + ' : ' + k + ' = ' + m };
+    }
+    if (t === 4) {
+      const p1 = rnd(2, 6), p2 = rnd(1, 5), c1 = rnd(2, 5), c2 = rnd(2, 4);
+      return { q: 'Тетрадка струва ' + p1 + ' лв., а химикал – ' + p2 + ' лв. ' + n1 + ' купи ' + c1 + ' тетрадки и ' + c2 + ' химикала. Колко плати?', ans: p1 * c1 + p2 * c2, ex: c1 + '×' + p1 + ' + ' + c2 + '×' + p2 + ' = ' + (p1 * c1) + ' + ' + (p2 * c2) + ' = ' + (p1 * c1 + p2 * c2) };
+    }
+    if (t === 5) {
+      const v = pick([40, 50, 60, 80, 90]), hh = rnd(2, 4);
+      if (Math.random() < 0.5) return { q: 'Влак се движи с ' + v + ' км в час. Колко километра ще измине за ' + hh + ' часа и половина?', ans: v * hh + v / 2, ex: v + ' × ' + hh + ' + ' + (v / 2) + ' = ' + (v * hh + v / 2) };
+      const age = rnd(6, 12), d = rnd(3, 8);
+      return { q: n1 + ' е на ' + age + ' години, а ' + n2 + ' е с ' + d + ' години по-голям. На колко години ще бъдат двамата заедно след 3 години?', ans: age + age + d + 6, ex: 'Сега: ' + age + ' + ' + (age + d) + ' = ' + (2 * age + d) + '. След 3 години всеки е с 3 повече: ' + (2 * age + d) + ' + 6 = ' + (2 * age + d + 6) };
+    }
+    const k = rnd(3, 5), son = rnd(6, 12);
+    if (Math.random() < 0.5) return { q: 'Бащата е ' + k + ' пъти по-голям от сина си. Заедно са на ' + (son * (k + 1)) + ' години. На колко години е синът?', ans: son, ex: 'Синът е 1 част, бащата – ' + k + ' части; общо ' + (k + 1) + ' части = ' + (son * (k + 1)) + ', значи 1 част = ' + son };
+    const w = rnd(3, 6), x = rnd(2, 5);
+    return { q: w + ' работници боядисват ограда за ' + (x * 2) + ' дни. За колко дни ще я боядисат ' + (w * 2) + ' работници?', ans: x, ex: 'Двойно повече хора – двойно по-малко време: ' + (x * 2) + ' : 2 = ' + x };
+  };
+
+  G.seq = (L) => {
+    if (L <= 2) {
+      const set = pick([EMO.форми, EMO.плодове, EMO.животни]);
+      const [a, b, c] = sample(set, 3);
+      const pat = L === 1 ? pick([[a, b], [a, a, b]]) : pick([[a, b, c], [a, a, b], [a, b, b], [a, b, c, b]]);
+      const len = pat.length * 2 + rnd(0, pat.length - 1);
+      const shown = []; for (let i = 0; i < len; i++) shown.push(pat[i % pat.length]);
+      const ans = pat[len % pat.length];
+      return { q: 'Кое идва после?', vis: shown.join(' ') + ' ❓', ans, ch: shuffle([...new Set([a, b, c])]), ex: 'Повтаря се: ' + pat.join(' ') };
+    }
+    let s, ans, ex;
+    const t = Math.min(L, 6);
+    if (t === 3) { const st = rnd(1, 20), d = pick([2, 3, 5, 10]) * (Math.random() < 0.3 ? -1 : 1), st2 = d < 0 ? st + 60 : st; s = [0, 1, 2, 3, 4].map((i) => st2 + i * d); ans = st2 + 5 * d; ex = 'Всеки път ' + (d > 0 ? '+' : '') + d; }
+    else if (t === 4) {
+      if (Math.random() < 0.5) { const st = rnd(1, 5), m = pick([2, 3]); s = [0, 1, 2, 3].map((i) => st * Math.pow(m, i)); ans = st * Math.pow(m, 4); ex = 'Всеки път × ' + m; }
+      else { const st = rnd(1, 10), a = rnd(1, 5), b = rnd(2, 9); s = [st]; for (let i = 1; i < 6; i++) s.push(s[i - 1] + (i % 2 ? a : b)); ans = s[5] + b; ex = 'Редуват се +' + a + ' и +' + b; }
+    } else if (t === 5) {
+      const k = rnd(0, 2);
+      if (k === 0) { const o = rnd(1, 4); s = [0, 1, 2, 3, 4].map((i) => (i + o) * (i + o)); ans = (5 + o) * (5 + o); ex = 'Квадрати: ' + o + '×' + o + ', ' + (o + 1) + '×' + (o + 1) + '…'; }
+      else if (k === 1) { const a = rnd(1, 3), b = rnd(1, 4); s = [a, b]; for (let i = 2; i < 6; i++) s.push(s[i - 1] + s[i - 2]); ans = s[4] + s[5]; ex = 'Всяко число е сбор от предишните две'; }
+      else { const st = rnd(1, 10); s = [st]; for (let i = 1; i < 5; i++) s.push(s[i - 1] + i); ans = s[4] + 5; ex = 'Прибавяме +1, +2, +3, +4, после +5'; }
+    } else {
+      const k = rnd(0, 2);
+      if (k === 0) { const m = rnd(2, 3), c = rnd(1, 3), st = rnd(1, 4); s = [st]; for (let i = 1; i < 5; i++) s.push(s[i - 1] * m + c); ans = s[4] * m + c; ex = 'Всеки път × ' + m + ' и + ' + c; }
+      else if (k === 1) { const pr = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37]; const o = rnd(0, 5); s = pr.slice(o, o + 5); ans = pr[o + 5]; ex = 'Прости числа – делят се само на 1 и на себе си'; }
+      else { const a = rnd(1, 5), b = rnd(20, 40), da = rnd(2, 4), db = rnd(2, 4); s = [a, b, a + da, b - db, a + 2 * da, b - 2 * db]; ans = a + 3 * da; ex = 'Две преплетени редици: ' + a + ', ' + (a + da) + ', ' + (a + 2 * da) + '… (+' + da + ') и ' + b + ', ' + (b - db) + '… (−' + db + ')'; }
+    }
+    return { q: 'Кое число следва?', vis: s.join(',  ') + ',  ?', ans, ex };
+  };
+
+  G.odd = (L) => {
+    if (L <= 2) {
+      const cats = Object.keys(EMO);
+      const [c1, c2] = sample(cats, 2);
+      const items = sample(EMO[c1], 3), odd = pick(EMO[c2]);
+      return { q: 'Кое не е от групата?', ans: odd, ch: shuffle(items.concat(odd)), ex: 'Другите са ' + c1 + ', а ' + odd + ' – не.' };
+    }
+    if (L <= 4 && Math.random() < 0.6) {
+      const cats = Object.keys(WORDS);
+      const [c1, c2] = sample(cats, 2);
+      const items = sample(WORDS[c1], 3), odd = pick(WORDS[c2]);
+      return { q: 'Коя дума е излишна?', ans: odd, ch: shuffle(items.concat(odd)), ex: 'Другите са ' + c1 + ', а „' + odd + '“ е от ' + c2 + '.' };
+    }
+    const k = L >= 5 ? rnd(0, 2) : rnd(0, 1);
+    let items, odd, ex;
+    if (k === 0) { const ev = Math.random() < 0.5; items = sample([...Array(40).keys()].map((i) => i * 2 + (ev ? 2 : 1)), 3); odd = rnd(1, 40) * 2 + (ev ? 1 : 2); ex = 'Другите са ' + (ev ? 'четни' : 'нечетни') + ', а ' + odd + ' – не.'; }
+    else if (k === 1) { const m = pick([3, 4, 5, 6, 7, 9]); items = sample([...Array(12).keys()].map((i) => (i + 2) * m), 3); do { odd = rnd(10, 90); } while (odd % m === 0); ex = 'Другите се делят на ' + m + ', а ' + odd + ' – не.'; }
+    else { items = sample([2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31], 3); odd = pick([9, 15, 21, 25, 27, 33, 35, 39]); ex = 'Другите са прости числа, а ' + odd + ' се дели и на други числа.'; }
+    return { q: 'Кое число е излишно?', ans: String(odd), ch: shuffle(items.concat(odd)).map(String), ex };
+  };
+
+  G.scale = (L) => {
+    const [A, B, C] = sample(EMO.плодове, 3);
+    const t = Math.min(Math.max(L, 2), 6);
+    if (t === 2) { const a = rnd(1, 5); return { q: 'Колко струва ' + A + '?', vis: A + ' + ' + A + ' = ' + (2 * a), ans: a, ch: numChoices(a, 2), ex: 'Две еднакви правят ' + (2 * a) + ', значи едната е ' + a + '.' }; }
+    if (t === 3) { const a = rnd(2, 6), b = rnd(1, 9); return { q: 'Колко струва ' + B + '?', vis: A + ' + ' + A + ' = ' + (2 * a) + '\n' + A + ' + ' + B + ' = ' + (a + b), ans: b, ex: A + ' = ' + a + ', значи ' + B + ' = ' + (a + b) + ' − ' + a + ' = ' + b }; }
+    if (t === 4) { const a = rnd(2, 6), b = rnd(1, 7), c = rnd(1, 9); return { q: 'Колко струва ' + C + '?', vis: A + ' + ' + A + ' + ' + A + ' = ' + (3 * a) + '\n' + A + ' + ' + B + ' = ' + (a + b) + '\n' + B + ' + ' + C + ' = ' + (b + c), ans: c, ex: A + ' = ' + a + ', ' + B + ' = ' + b + ', ' + C + ' = ' + c }; }
+    if (t === 5) { const a = rnd(2, 6), b = rnd(2, 5); return { q: 'Колко е ' + A + ' + ' + B + '?', vis: A + ' + ' + A + ' = ' + (2 * a) + '\n' + A + ' × ' + B + ' = ' + (a * b), ans: a + b, ex: A + ' = ' + a + ', ' + B + ' = ' + (a * b) + ' : ' + a + ' = ' + b + ', сборът е ' + (a + b) }; }
+    const a = rnd(4, 12), b = rnd(1, a - 1);
+    return { q: 'Колко струва ' + A + '?', vis: A + ' + ' + B + ' = ' + (a + b) + '\n' + A + ' − ' + B + ' = ' + (a - b), ans: a, ex: 'Събери двете: 2 × ' + A + ' = ' + (2 * a) + ', значи ' + A + ' = ' + a };
+  };
+
+  G.order = (L) => {
+    const n = L >= 5 ? 4 : 3;
+    const ppl = sample(NAMES, n);   // ppl[0] е най-висок
+    const rel = pick([['по-висок', 'по-висока', 'най-висок', 'най-нисък'], ['по-голям', 'по-голяма', 'най-голям', 'най-малък'], ['по-бърз', 'по-бърза', 'най-бърз', 'най-бавен']]);
+    const FEM = ['Ани', 'Вики', 'Деси', 'Мила', 'Рая', 'Тея'];
+    const fem = (nm) => FEM.includes(nm);
+    const facts = [];
+    for (let i = 0; i < n - 1; i++) facts.push(ppl[i] + ' е ' + (fem(ppl[i]) ? rel[1] : rel[0]) + ' от ' + ppl[i + 1] + '.');
+    const ask = rnd(0, n === 4 ? 2 : 1);
+    let q, ans;
+    if (ask === 0) { q = 'Кой е ' + rel[2] + '?'; ans = ppl[0]; }
+    else if (ask === 1) { q = 'Кой е ' + rel[3] + '?'; ans = ppl[n - 1]; }
+    else { q = 'Кой е на второ място?'; ans = ppl[1]; }
+    return { q: shuffle(facts).join('\n') + '\n\n' + q, ans, ch: shuffle(ppl), ex: 'Подредени: ' + ppl.join(' → ') };
+  };
+
+  G.memory = (L) => {
+    const n = Math.min(3 + L, 8);
+    const pool = EMO.плодове.concat(EMO.животни, EMO.превозни);
+    const seq = sample(pool, n);
+    const showMs = 1200 + n * 700;
+    if (Math.random() < 0.5) {
+      const pos = rnd(1, n);
+      return { memo: seq.join(' '), showMs, q: 'Кое беше на ' + pos + '-о място?', ans: seq[pos - 1], ch: shuffle([seq[pos - 1]].concat(sample(seq.filter((x, i) => i !== pos - 1), 3))), ex: 'Редът беше: ' + seq.join(' ') };
+    }
+    const not = pick(pool.filter((x) => !seq.includes(x)));
+    return { memo: seq.join(' '), showMs, q: 'Кое НЕ беше показано?', ans: not, ch: shuffle([not].concat(sample(seq, 3))), ex: 'Показани бяха: ' + seq.join(' ') };
+  };
+
+  const hm = (h, m) => h + ':' + String(m).padStart(2, '0');
+  function clockSVG(h, m) {
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 200 200'); svg.setAttribute('width', '170'); svg.setAttribute('height', '170');
+    const add = (tag, at) => { const e = document.createElementNS(NS, tag); for (const k in at) e.setAttribute(k, at[k]); svg.appendChild(e); return e; };
+    add('circle', { cx: 100, cy: 100, r: 94, fill: '#fff', stroke: '#333', 'stroke-width': 6 });
+    for (let i = 1; i <= 12; i++) {
+      const a = i / 12 * Math.PI * 2;
+      const t = add('text', { x: 100 + Math.sin(a) * 74, y: 100 - Math.cos(a) * 74 + 7, 'text-anchor': 'middle', 'font-size': 20, 'font-family': 'sans-serif', 'font-weight': 700, fill: '#222' });
+      t.textContent = String(i);
+    }
+    const ha = ((h % 12) + m / 60) / 12 * Math.PI * 2, ma = m / 60 * Math.PI * 2;
+    add('line', { x1: 100, y1: 100, x2: 100 + Math.sin(ha) * 45, y2: 100 - Math.cos(ha) * 45, stroke: '#222', 'stroke-width': 8, 'stroke-linecap': 'round' });
+    add('line', { x1: 100, y1: 100, x2: 100 + Math.sin(ma) * 68, y2: 100 - Math.cos(ma) * 68, stroke: '#ff0033', 'stroke-width': 5, 'stroke-linecap': 'round' });
+    add('circle', { cx: 100, cy: 100, r: 6, fill: '#222' });
+    return svg;
+  }
+  G.clock = (L) => {
+    const t = Math.min(Math.max(L, 2), 5);
+    if (t <= 3) {
+      const h = rnd(1, 12), m = t === 2 ? pick([0, 30]) : pick([0, 15, 30, 45, 5, 10, 20, 40, 50]);
+      const ans = hm(h, m);
+      const alts = new Set([ans]);
+      while (alts.size < 4) alts.add(hm(pick([h, (h % 12) + 1, ((h + 10) % 12) + 1, rnd(1, 12)]), pick([0, 15, 30, 45, m, (m + 30) % 60])));
+      return { svg: () => clockSVG(h, m), q: 'Колко е часът?', ans, ch: shuffle([...alts]), ex: 'Малката стрелка показва часа (' + h + '), голямата (червената) – минутите (' + m + ').' };
+    }
+    if (t === 4) {
+      const h = rnd(7, 20), m = pick([5, 10, 15, 20, 25, 30, 35, 40, 45, 50]), add = pick([15, 20, 30, 40, 45, 50]);
+      const tot = h * 60 + m + add, ans = hm(Math.floor(tot / 60) % 24, tot % 60);
+      const alts = new Set([ans]);
+      for (const d of [-10, 10, 60, -60, 5]) { if (alts.size >= 4) break; const x = tot + d; alts.add(hm(Math.floor(x / 60) % 24, ((x % 60) + 60) % 60)); }
+      return { q: 'Сега е ' + hm(h, m) + '. Колко ще е часът след ' + add + ' минути?', ans, ch: shuffle([...alts]), ex: hm(h, m) + ' + ' + add + ' мин = ' + ans };
+    }
+    const h = rnd(8, 19), m = pick([10, 15, 20, 30, 40, 45, 50]), dur = rnd(4, 14) * 5 + 30;
+    const e = h * 60 + m + dur;
+    return { q: 'Филмът започва в ' + hm(h, m) + ' и свършва в ' + hm(Math.floor(e / 60), e % 60) + '. Колко минути трае?', ans: dur, ex: 'От ' + hm(h, m) + ' до ' + hm(Math.floor(e / 60), e % 60) + ' са ' + dur + ' минути' };
+  };
+
+  G.geo = (L) => {
+    const t = Math.min(Math.max(L, 3), 6);
+    if (t === 3) {
+      const sh = [['триъгълник', 3], ['квадрат', 4], ['петоъгълник', 5], ['шестоъгълник', 6]];
+      const [a, b] = sample(sh, 2);
+      return { q: 'Колко страни имат общо един ' + a[0] + ' и един ' + b[0] + '?', ans: a[1] + b[1], ch: numChoices(a[1] + b[1], 3), ex: a[0] + ' има ' + a[1] + ', ' + b[0] + ' има ' + b[1] + ': общо ' + (a[1] + b[1]) };
+    }
+    if (t === 4) { const a = rnd(3, 15), b = rnd(2, 10); return { q: 'Правоъгълник е със страни ' + a + ' см и ' + b + ' см. Колко е обиколката му (в см)?', ans: 2 * (a + b), ex: '2 × (' + a + ' + ' + b + ') = ' + (2 * (a + b)) }; }
+    if (t === 5) { const a = rnd(3, 15), b = rnd(2, 12); if (Math.random() < 0.5) return { q: 'Правоъгълник е със страни ' + a + ' см и ' + b + ' см. Колко е лицето му (в кв. см)?', ans: a * b, ex: a + ' × ' + b + ' = ' + (a * b) }; return { q: 'Квадрат има обиколка ' + (4 * a) + ' см. Колко е страната му?', ans: a, ex: (4 * a) + ' : 4 = ' + a }; }
+    const x = rnd(30, 80), y = rnd(30, 150 - x);
+    if (Math.random() < 0.5) return { q: 'В триъгълник два от ъглите са ' + x + '° и ' + y + '°. Колко градуса е третият?', ans: 180 - x - y, ex: 'Сборът на ъглите в триъгълник е 180°: 180 − ' + x + ' − ' + y + ' = ' + (180 - x - y) };
+    const a = rnd(2, 9); return { q: 'Куб е с ръб ' + a + ' см. Колко е обемът му (в куб. см)?', ans: a * a * a, ex: a + ' × ' + a + ' × ' + a + ' = ' + (a * a * a) };
+  };
+
+  // Видове задачи и за коя възраст се препоръчват
+  const CATS = [
+    { id: 'count', label: '🔢 Броене и сравняване', hint: 'Колко са, къде има повече', ages: [4, 6] },
+    { id: 'math', label: '➕ Смятане', hint: 'Събиране, изваждане, таблица, дроби, проценти, уравнения', ages: [5, 14] },
+    { id: 'word', label: '📖 Текстови задачи', hint: 'Задачи от живота – с пари, време, възраст', ages: [6, 14] },
+    { id: 'seq', label: '🔁 Закономерности', hint: 'Кое следва в редицата – фигури и числа', ages: [4, 14] },
+    { id: 'odd', label: '🧩 Кое е излишното', hint: 'Групиране и категории', ages: [4, 12] },
+    { id: 'scale', label: '⚖️ Везни със символи', hint: 'Абстрактно мислене – първа стъпка към алгебрата', ages: [6, 14] },
+    { id: 'order', label: '🧠 Логически подредби', hint: 'Кой е най-висок, ако…', ages: [7, 14] },
+    { id: 'memory', label: '👀 Памет и внимание', hint: 'Запомни реда за няколко секунди', ages: [4, 14] },
+    { id: 'clock', label: '🕒 Часовник и време', hint: 'Колко е часът, след колко минути', ages: [6, 11] },
+    { id: 'geo', label: '📐 Геометрия', hint: 'Фигури, обиколка, лице, ъгли', ages: [8, 14] },
+  ];
+  const recommended = (age) => CATS.filter((c) => age >= c.ages[0] && age <= c.ages[1]);
+  function level(cfg) {
+    const a = cfg.age;
+    const base = a <= 5 ? 1 : a <= 7 ? 2 : a <= 9 ? 3 : a <= 11 ? 4 : a <= 13 ? 5 : 6;
+    return Math.max(1, Math.min(6, base + (cfg.diff === 'easy' ? -1 : cfg.diff === 'hard' ? 1 : 0)));
+  }
+  let lastQ = '';
+  function makeTask(cfg) {
+    const rec = recommended(cfg.age).map((c) => c.id);
+    let cats = (cfg.cats || []).filter((c) => rec.includes(c));
+    if (!cats.length) cats = rec;
+    const L = level(cfg);
+    for (let i = 0; i < 8; i++) {
+      const c = pick(cats);
+      try {
+        const t = G[c](L);
+        t.cat = c;
+        if (typeof t.ans === 'number') t.ans = Math.round(t.ans * 100) / 100;
+        // малките деца избират с бутони, по-големите пишат числото
+        if (!t.ch && L <= 2 && typeof t.ans === 'number') t.ch = numChoices(t.ans);
+        const key = t.q + (t.vis || '') + (t.memo || '');
+        if (key === lastQ) continue;
+        lastQ = key;
+        return t;
+      } catch (e) { /* следващ опит */ }
+    }
+    const a = rnd(2, 9), b = rnd(2, 9);
+    return { q: 'Колко е ' + a + ' + ' + b + '?', ans: a + b, ch: numChoices(a + b), ex: a + ' + ' + b + ' = ' + (a + b) };
+  }
+  YTC.kidsTask = makeTask;   // за тестове
+
+  // ======================================================== Настройки и дневен отчет
+  const K_KEY = 'ytc-kids', D_KEY = 'ytc-kids-day';
+  const DEF = { on: false, pin: '', age: 8, cats: [], diff: 'mid', every: 15, per: 2, limit: 60 };
+  const cfg = () => Object.assign({}, DEF, LS.get(K_KEY, {}));
+  const saveCfg = (c) => LS.set(K_KEY, c);
+  function day() {
+    let d = LS.get(D_KEY, null);
+    if (!d || d.d !== dayKey()) d = { d: dayKey(), watched: 0, since: 0, bonus: 0, lock: d && d.lock === 'tasks' ? 'tasks' : '', ok: 0, bad: 0 };
+    return d;
+  }
+  const saveDay = (d) => LS.set(D_KEY, d);
+  YTC.kids = {
+    active: () => { const c = cfg(); return !!(c.on && c.pin); },
+    guard(fn) { if (this.active()) askPin(fn); else fn(); },
+    openSettings: () => openSettings(),
+  };
+
+  // ======================================================== Интерфейс
+  const CSS = `
+  :host{all:initial}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  .ov{position:fixed;inset:0;z-index:2147483647;overflow-y:auto;-webkit-overflow-scrolling:touch;
+    background:linear-gradient(160deg,#2b1055,#1a3a8a 60%,#0d6e8a);color:#fff;
+    font:17px/1.4 -apple-system,BlinkMacSystemFont,Roboto,"Segoe UI",sans-serif;
+    padding:calc(18px + env(safe-area-inset-top)) 18px calc(24px + env(safe-area-inset-bottom));display:flex;flex-direction:column;align-items:center}
+  .in{width:100%;max-width:520px;display:flex;flex-direction:column;align-items:center;flex:1}
+  h1{font-size:24px;margin:6px 0 2px;text-align:center}
+  .sub{opacity:.8;font-size:14px;text-align:center;margin-bottom:12px}
+  .stars{font-size:22px;letter-spacing:4px;margin:4px 0 10px}
+  .card{width:100%;background:rgba(255,255,255,.12);border-radius:22px;padding:18px 16px;text-align:center;backdrop-filter:blur(6px)}
+  .vis{font-size:34px;line-height:1.45;white-space:pre-line;margin:4px 0 12px;word-break:break-word}
+  .q{font-size:20px;font-weight:600;white-space:pre-line;margin:6px 0 14px}
+  .ch{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%}
+  .ch button,.kp button{border:0;border-radius:16px;background:#fff;color:#1a1a2e;font:700 22px -apple-system,BlinkMacSystemFont,Roboto,sans-serif;padding:14px 6px;min-height:58px}
+  .ch button.big{font-size:32px}
+  .ch button:active,.kp button:active{transform:scale(.96)}
+  .disp{width:100%;background:#fff;color:#1a1a2e;border-radius:16px;font:700 30px -apple-system,BlinkMacSystemFont,Roboto,sans-serif;padding:10px;min-height:58px;margin-bottom:10px;text-align:center;letter-spacing:2px}
+  .kp{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;width:100%}
+  .kp .ok{background:#30d158;color:#fff}.kp .del{background:#ffd60a}
+  .fb{width:100%;border-radius:18px;padding:14px;margin-top:14px;text-align:center;font-size:17px}
+  .fb.good{background:#30d158;color:#06280f}.fb.bad{background:#ff9f0a;color:#2a1800}
+  .fb b{display:block;font-size:22px;margin-bottom:4px}
+  .go{border:0;border-radius:24px;background:#ff0033;color:#fff;font:700 18px -apple-system,BlinkMacSystemFont,Roboto,sans-serif;padding:14px 28px;margin-top:16px}
+  .ghost{border:0;background:rgba(255,255,255,.14);color:#fff;border-radius:18px;font:600 14px -apple-system,BlinkMacSystemFont,Roboto,sans-serif;padding:9px 16px;margin-top:auto}
+  .foot{margin-top:22px;display:flex;justify-content:center;width:100%}
+  .memo{font-size:44px;letter-spacing:6px;line-height:1.5;margin:10px 0}
+  .bar{width:100%;height:8px;border-radius:4px;background:rgba(255,255,255,.2);overflow:hidden;margin:8px 0 4px}
+  .bar i{display:block;height:100%;background:#ffd60a;transition:width linear}
+  /* настройки */
+  .set{background:#1c1c1e;color:#f2f2f7;align-items:stretch}
+  .set .in{align-items:stretch}
+  .grp{margin:18px 4px 6px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#8e8e93}
+  .box{background:#2c2c2e;border-radius:12px;overflow:hidden}
+  .row{display:flex;align-items:center;gap:12px;padding:11px 14px;min-height:48px;font-size:15px}
+  .row+.row{border-top:.5px solid #3a3a3c}
+  .lbl{flex:1}.lbl small{display:block;color:#8e8e93;font-size:12px;margin-top:1px}
+  select{background:#3a3a3c;color:#fff;border:0;border-radius:8px;padding:7px 8px;font:15px inherit}
+  .sw{position:relative;width:51px;height:31px;flex:0 0 auto}
+  .sw input{position:absolute;opacity:0;width:100%;height:100%;margin:0;z-index:1}
+  .sw i{position:absolute;inset:0;border-radius:16px;background:#39393d;transition:background .2s}
+  .sw i:after{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;transition:transform .2s}
+  .sw input:checked+i{background:#30d158}.sw input:checked+i:after{transform:translateX(20px)}
+  .seg{display:flex;gap:6px}
+  .seg button{border:0;border-radius:8px;background:#3a3a3c;color:#fff;font:600 13px -apple-system,BlinkMacSystemFont,Roboto,sans-serif;padding:7px 10px}
+  .seg button.on{background:#0a84ff}
+  .btn{display:block;width:100%;border:0;border-radius:12px;background:#3a3a3c;color:#0a84ff;font:600 15px -apple-system,BlinkMacSystemFont,Roboto,sans-serif;padding:12px;margin-top:10px}
+  .btn.main{background:#30d158;color:#000}
+  .top{display:flex;justify-content:space-between;align-items:center}
+  .top h1{font-size:21px;text-align:left}
+  .x{border:0;background:#2c2c2e;color:#aeaeb2;width:32px;height:32px;border-radius:50%;font-size:18px;padding:0}
+  .today{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .tile{background:#2c2c2e;border-radius:12px;padding:10px;text-align:center}
+  .tile b{display:block;font-size:19px;color:#30d158}.tile span{font-size:11px;color:#aeaeb2}
+  .pin{display:flex;gap:12px;justify-content:center;margin:14px 0}
+  .pin i{width:18px;height:18px;border-radius:50%;border:2px solid #fff}
+  .pin i.f{background:#fff}
+  .err{color:#ff453a;text-align:center;min-height:22px;font-size:14px}
+  .info{color:#8e8e93;font-size:13px;margin:10px 4px 0}
+  `;
+  let host = null, rootEl = null, mode = '';
+  function mount(cls) {
+    unmount();
+    host = el('div'); host.id = 'ytc-kids';
+    const r = host.attachShadow({ mode: 'open' });
+    r.appendChild(el('style', null, CSS));
+    rootEl = el('div', 'ov' + (cls ? ' ' + cls : ''));
+    const inner = el('div', 'in');
+    rootEl.appendChild(inner);
+    r.appendChild(rootEl);
+    (document.body || document.documentElement).appendChild(host);
+    return inner;
+  }
+  function unmount() { if (host) host.remove(); host = null; rootEl = null; mode = ''; }
+  const clear = (n) => { while (n.firstChild) n.removeChild(n.firstChild); };
+
+  function stopVideo() {
+    const v = video();
+    try { if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen(); } catch (e) { /* */ }
+    try { if (v && v.webkitDisplayingFullscreen && v.webkitExitFullscreen) v.webkitExitFullscreen(); } catch (e) { /* */ }
+    try { if (v && v.webkitPresentationMode === 'picture-in-picture') v.webkitSetPresentationMode('inline'); } catch (e) { /* */ }
+    if (v && !v.paused) { window.__ytcUserPaused = true; v.pause(); }
+  }
+
+  // ---------- ПИН ----------
+  function pinPad(inner, title, sub, onDone, onCancel) {
+    clear(inner);
+    inner.appendChild(el('h1', null, title));
+    inner.appendChild(el('div', 'sub', sub));
+    const dots = el('div', 'pin'); for (let i = 0; i < 4; i++) dots.appendChild(el('i'));
+    inner.appendChild(dots);
+    const err = el('div', 'err'); inner.appendChild(err);
+    let val = '';
+    const draw = () => [...dots.children].forEach((d, i) => d.classList.toggle('f', i < val.length));
+    const kp = el('div', 'kp'); kp.style.maxWidth = '300px';
+    for (const k of ['1', '2', '3', '4', '5', '6', '7', '8', '9', '⌫', '0', '✕']) {
+      const b = el('button', k === '⌫' ? 'del' : '', k);
+      b.addEventListener('click', () => {
+        if (k === '✕') { onCancel(); return; }
+        if (k === '⌫') val = val.slice(0, -1); else if (val.length < 4) val += k;
+        draw();
+        if (val.length === 4) { const v = val; val = ''; setTimeout(() => { draw(); onDone(v, (m) => { err.textContent = m; }); }, 120); }
+      });
+      kp.appendChild(b);
+    }
+    inner.appendChild(kp);
+  }
+  function askPin(fn, back) {
+    const c = cfg();
+    const prevMode = mode;
+    const inner = mount('set');
+    mode = 'pin';
+    let tries = 0;
+    pinPad(inner, '👤 Родител', 'Въведи ПИН', (v, err) => {
+      if (v === c.pin) { unmount(); fn(); return; }
+      tries++;
+      err(tries >= 3 ? 'Грешен ПИН. Забравен ПИН се нулира само с изтриване и повторно инсталиране.' : 'Грешен ПИН');
+    }, () => { unmount(); if (back) back(); else if (prevMode === 'tasks' || prevMode === 'limit') check(true); });
+  }
+
+  // ---------- Задачи ----------
+  let state = null;   // { need, solved, wrong, task }
+  function showTasks() {
+    const c = cfg();
+    stopVideo();
+    if (mode === 'tasks' && host && host.isConnected) return;
+    const inner = mount();
+    mode = 'tasks';
+    if (!state) state = { need: c.per, solved: 0, wrong: 0, task: null };
+    nextTask(inner);
+  }
+  function header(inner) {
+    inner.appendChild(el('h1', null, '🧠 Мисловна пауза!'));
+    inner.appendChild(el('div', 'sub', 'Реши ' + (state.need === 1 ? 'задачата' : state.need + ' задачи') + ' и продължаваш да гледаш'));
+    inner.appendChild(el('div', 'stars', '⭐'.repeat(state.solved) + '☆'.repeat(Math.max(0, state.need - state.solved))));
+  }
+  function parentBtn(inner) {
+    const f = el('div', 'foot');
+    const p = el('button', 'ghost', '👤 Родител');
+    p.addEventListener('click', () => askPin(() => openSettings()));
+    f.appendChild(p);
+    inner.appendChild(f);
+  }
+  function nextTask(inner) {
+    clear(inner);
+    header(inner);
+    const d = day();
+    if (d.waitUntil && Date.now() < d.waitUntil) { waitScreen(inner, d.waitUntil); return; }
+    const t = state.task || (state.task = makeTask(cfg()));
+    const card = el('div', 'card');
+    inner.appendChild(card);
+    if (t.memo && !t.memoShown) {
+      card.appendChild(el('div', 'q', 'Запомни какво виждаш!'));
+      card.appendChild(el('div', 'memo', t.memo));
+      const bar = el('div', 'bar'); const bi = el('i'); bi.style.width = '100%'; bar.appendChild(bi); card.appendChild(bar);
+      requestAnimationFrame(() => { bi.style.transitionDuration = t.showMs + 'ms'; bi.style.width = '0%'; });
+      setTimeout(() => { t.memoShown = true; if (mode === 'tasks') nextTask(inner); }, t.showMs);
+      parentBtn(inner);
+      return;
+    }
+    if (t.svg) card.appendChild(t.svg());
+    if (t.vis) card.appendChild(el('div', 'vis', t.vis));
+    card.appendChild(el('div', 'q', t.q));
+    const answer = (val) => {
+      const ok = typeof t.ans === 'number' ? Math.abs(Number(String(val).replace(',', '.')) - t.ans) < 1e-6 : String(val) === String(t.ans);
+      const dd = day();
+      if (ok) { dd.ok++; state.solved++; state.wrong = 0; } else { dd.bad++; state.wrong++; }
+      saveDay(dd);
+      feedback(inner, card, ok, t);
+    };
+    if (t.ch) {
+      const g = el('div', 'ch');
+      for (const o of t.ch) {
+        const b = el('button', /^\p{Extended_Pictographic}/u.test(o) ? 'big' : '', o);
+        b.addEventListener('click', () => answer(o));
+        g.appendChild(b);
+      }
+      card.appendChild(g);
+    } else {
+      const disp = el('div', 'disp', ' ');
+      card.appendChild(disp);
+      let val = '';
+      const kp = el('div', 'kp');
+      const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
+      keys.push(typeof t.ans === 'number' && t.ans < 0 ? '−' : (typeof t.ans === 'number' && t.ans % 1 ? ',' : '⌫'), '0', '✓');
+      for (const k of keys) {
+        const b = el('button', k === '✓' ? 'ok' : k === '⌫' ? 'del' : '', k);
+        b.addEventListener('click', () => {
+          if (k === '✓') { if (val && val !== '-') answer(val); return; }
+          if (k === '⌫') val = val.slice(0, -1);
+          else if (k === '−') val = val.startsWith('-') ? val.slice(1) : '-' + val;
+          else if (val.length < 7) val += k === ',' ? '.' : k;
+          disp.textContent = val ? val.replace('-', '−').replace('.', ',') : ' ';
+        });
+        kp.appendChild(b);
+      }
+      if (keys[9] !== '⌫') { const bk = el('button', 'del', '⌫'); bk.addEventListener('click', () => { val = val.slice(0, -1); disp.textContent = val ? val.replace('-', '−') : ' '; }); bk.style.gridColumn = '1 / 4'; kp.appendChild(bk); }
+      card.appendChild(kp);
+    }
+    parentBtn(inner);
+  }
+  function feedback(inner, card, ok, t) {
+    clear(inner);
+    header(inner);
+    inner.appendChild(card);
+    card.querySelectorAll('button').forEach((b) => { b.disabled = true; if (String(b.textContent) === String(t.ans)) b.style.background = '#30d158'; });
+    const fb = el('div', 'fb ' + (ok ? 'good' : 'bad'));
+    fb.appendChild(el('b', null, ok ? pick(['🎉 Браво!', '🌟 Супер!', '👏 Точно така!', '🚀 Отлично!']) : '🤔 Не съвсем'));
+    fb.appendChild(el('div', null, ok ? 'Правилно: ' + String(t.ans).replace('.', ',') : 'Отговорът е ' + String(t.ans).replace('.', ',') + '. ' + t.ex));
+    inner.appendChild(fb);
+    state.task = null;
+    const done = state.solved >= state.need;
+    const go = el('button', 'go', done ? '▶ Продължи гледането' : ok ? 'Следваща задача' : 'Опитай с нова задача');
+    go.addEventListener('click', () => {
+      if (done) { unlock(); return; }
+      if (state.wrong >= 3) { const d = day(); d.waitUntil = Date.now() + 30e3; saveDay(d); state.wrong = 0; }
+      nextTask(inner);
+    });
+    inner.appendChild(go);
+    parentBtn(inner);
+  }
+  function waitScreen(inner, until) {
+    const card = el('div', 'card');
+    card.appendChild(el('div', 'vis', '😌'));
+    card.appendChild(el('div', 'q', 'Почини си малко и опитай пак.'));
+    const n = el('div', 'disp', ''); card.appendChild(n);
+    inner.appendChild(card);
+    const tm = setInterval(() => {
+      const s = Math.ceil((until - Date.now()) / 1000);
+      if (mode !== 'tasks') { clearInterval(tm); return; }
+      if (s <= 0) { clearInterval(tm); nextTask(inner); return; }
+      n.textContent = s + ' с';
+    }, 250);
+    parentBtn(inner);
+  }
+  function unlock() {
+    if (state && state.test) { state = null; openSettings(); return; }
+    const d = day();
+    d.lock = ''; d.since = 0; d.waitUntil = 0;
+    saveDay(d);
+    state = null;
+    unmount();
+    const v = video();
+    if (v && onWatch()) { window.__ytcUserPaused = false; v.play().catch(() => {}); }
+    if (YTC.toast) YTC.toast('✓ Гледай още ' + cfg().every + ' мин');
+  }
+
+  // ---------- Твърд лимит ----------
+  function showLimit() {
+    stopVideo();
+    if (mode === 'limit' && host && host.isConnected) return;
+    const inner = mount();
+    mode = 'limit';
+    inner.appendChild(el('div', 'vis', '🌙'));
+    inner.appendChild(el('h1', null, 'Времето за гледане днес свърши'));
+    const d = day();
+    inner.appendChild(el('div', 'sub', 'Изгледа ' + Math.round(d.watched / 60) + ' мин. Утре можеш пак! Сега е време за игра, книжка или разходка.'));
+    const card = el('div', 'card');
+    card.appendChild(el('div', 'q', 'Днес реши ' + d.ok + ' ' + (d.ok === 1 ? 'задача' : 'задачи') + ' ⭐'));
+    inner.appendChild(card);
+    const f = el('div', 'foot');
+    const p = el('button', 'ghost', '👤 Родител: добави време');
+    p.addEventListener('click', () => askPin(() => openSettings()));
+    f.appendChild(p);
+    inner.appendChild(f);
+  }
+
+  // ---------- Настройки на родителя ----------
+  function openSettings() {
+    let c = cfg();
+    const inner = mount('set');
+    mode = 'settings';
+    if (!c.pin) {
+      // първо – ПИН
+      let first = '';
+      const ask1 = () => pinPad(inner, '👨‍👩‍👧 Родителски контрол', 'Измисли ПИН от 4 цифри. Детето не бива да го знае.', (v) => { first = v; ask2(); }, unmount);
+      const ask2 = () => pinPad(inner, '👨‍👩‍👧 Родителски контрол', 'Въведи ПИН-а още веднъж', (v, err) => {
+        if (v !== first) { err('Не съвпада – опитай отначало'); setTimeout(ask1, 900); return; }
+        c.pin = v; saveCfg(c); openSettings();
+      }, unmount);
+      ask1();
+      return;
+    }
+    const top = el('div', 'top');
+    top.appendChild(el('h1', null, '👨‍👩‍👧 Родителски контрол'));
+    const x = el('button', 'x', '✕'); x.addEventListener('click', () => { unmount(); check(true); }); top.appendChild(x);
+    inner.appendChild(top);
+
+    const d = day();
+    const today = el('div', 'today');
+    for (const [v, l] of [[Math.round(d.watched / 60) + ' мин', 'гледано днес'], [String(d.ok), 'решени задачи'], [String(d.bad), 'грешни опита']]) {
+      const t = el('div', 'tile'); t.appendChild(el('b', null, v)); t.appendChild(el('span', null, l)); today.appendChild(t);
+    }
+    inner.appendChild(today);
+
+    const sw = (on, fn) => { const s = el('span', 'sw'); const cb = el('input'); cb.type = 'checkbox'; cb.checked = on; cb.addEventListener('change', () => fn(cb.checked)); s.appendChild(cb); s.appendChild(el('i')); return s; };
+    const row = (label, hint, ctl) => { const r = el('label', 'row'); const l = el('div', 'lbl', label); if (hint) l.appendChild(el('small', null, hint)); r.appendChild(l); r.appendChild(ctl); return r; };
+    const sel = (val, opts, fn) => { const s = el('select'); for (const [v, l] of opts) { const o = el('option', null, l); o.value = String(v); if (String(v) === String(val)) o.selected = true; s.appendChild(o); } s.addEventListener('change', () => fn(s.value)); return s; };
+    const upd = (k, v) => { c = cfg(); c[k] = v; saveCfg(c); };
+
+    inner.appendChild(el('div', 'grp', 'Основно'));
+    const b1 = el('div', 'box');
+    b1.appendChild(row('Включи родителския контрол', 'Мисловни паузи и дневен лимит', sw(c.on, (v) => upd('on', v))));
+    b1.appendChild(row('Възраст на детето', 'Задачите се подбират според нея', sel(c.age, [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].map((a) => [a, a + ' г.']), (v) => { upd('age', +v); openSettings(); })));
+    inner.appendChild(b1);
+
+    inner.appendChild(el('div', 'grp', 'Мисловни паузи'));
+    const b2 = el('div', 'box');
+    b2.appendChild(row('Пауза на всеки', 'Минути гледане между задачите', sel(c.every, [5, 10, 15, 20, 30, 45, 60].map((m) => [m, m + ' мин']), (v) => upd('every', +v))));
+    b2.appendChild(row('Задачи на пауза', 'Колко трябва да реши правилно', sel(c.per, [1, 2, 3, 4, 5].map((m) => [m, String(m)]), (v) => upd('per', +v))));
+    const seg = el('div', 'seg');
+    for (const [k, l] of [['easy', 'Лесно'], ['mid', 'Нормално'], ['hard', 'Трудно']]) {
+      const b = el('button', c.diff === k ? 'on' : '', l);
+      b.addEventListener('click', (e) => { e.preventDefault(); upd('diff', k); seg.querySelectorAll('button').forEach((y) => y.classList.toggle('on', y === b)); });
+      seg.appendChild(b);
+    }
+    b2.appendChild(row('Трудност', 'Спрямо възрастта', seg));
+    inner.appendChild(b2);
+
+    inner.appendChild(el('div', 'grp', 'Видове задачи (препоръчани за ' + c.age + ' г.)'));
+    const b3 = el('div', 'box');
+    const rec = recommended(c.age);
+    const chosen = new Set((c.cats || []).filter((x) => rec.some((r) => r.id === x)));
+    if (!chosen.size) rec.forEach((r) => chosen.add(r.id));
+    for (const cat of rec) {
+      b3.appendChild(row(cat.label, cat.hint, sw(chosen.has(cat.id), (v) => {
+        if (v) chosen.add(cat.id); else chosen.delete(cat.id);
+        upd('cats', [...chosen]);
+      })));
+    }
+    inner.appendChild(b3);
+    inner.appendChild(el('div', 'info', 'Ако изключиш всички, ще се редуват всички препоръчани.'));
+
+    inner.appendChild(el('div', 'grp', 'Твърд дневен лимит'));
+    const b4 = el('div', 'box');
+    b4.appendChild(row('Най-много гледане на ден', 'След него гледането спира, каквото и да реши детето', sel(c.limit, [[0, 'Без лимит'], [15, '15 мин'], [30, '30 мин'], [45, '45 мин'], [60, '1 час'], [90, '1,5 часа'], [120, '2 часа'], [180, '3 часа']], (v) => upd('limit', +v))));
+    inner.appendChild(b4);
+
+    const btn = (t, fn, cls) => { const b = el('button', 'btn' + (cls ? ' ' + cls : ''), t); b.addEventListener('click', fn); inner.appendChild(b); return b; };
+    inner.appendChild(el('div', 'grp', 'Днес'));
+    for (const m of [15, 30, 60]) btn('＋ ' + m + ' мин гледане днес', () => { const dd = day(); dd.bonus = (dd.bonus || 0) + m; if (dd.lock === 'limit') dd.lock = ''; saveDay(dd); if (YTC.toast) YTC.toast('✓ Добавени ' + m + ' мин за днес'); });
+    btn('Пропусни сегашната пауза', () => { const dd = day(); dd.lock = ''; dd.since = 0; saveDay(dd); state = null; if (YTC.toast) YTC.toast('✓ Паузата е пропусната'); });
+    btn('🧪 Пробвай една задача', () => { state = { need: 1, solved: 0, wrong: 0, task: null, test: true }; const inn = mount(); mode = 'tasks'; nextTask(inn); });
+    btn('Смени ПИН', () => { c = cfg(); c.pin = ''; saveCfg(c); openSettings(); });
+    btn('✓ Готово', () => { unmount(); check(true); }, 'main');
+    inner.appendChild(el('div', 'info', 'Задачите се създават на самото устройство – без интернет и без да се изпраща нищо. Докато е включен родителският контрол, настройките на YT Контрол също искат ПИН.'));
+  }
+
+  // ======================================================== Броене на времето
+  let last = 0;
+  function check(force) {
+    const c = cfg();
+    if (!c.on || !c.pin) { if (mode === 'tasks' || mode === 'limit') { unmount(); state = null; } return; }
+    if (mode === 'settings' || mode === 'pin' || (state && state.test)) return;
+    const d = day();
+    const limitSec = c.limit ? (c.limit + (d.bonus || 0)) * 60 : 0;
+    if (limitSec && d.watched >= limitSec) { showLimit(); return; }
+    if (mode === 'limit') unmount();
+    if (d.lock === 'tasks' || d.since >= c.every * 60) {
+      if (d.lock !== 'tasks') { d.lock = 'tasks'; saveDay(d); }
+      if (onWatch() || force) showTasks();
+      return;
+    }
+  }
+  function tick() {
+    const now = Date.now();
+    const dt = last ? Math.min(5, (now - last) / 1000) : 0;
+    last = now;
+    const c = cfg();
+    if (!c.on || !c.pin) { if (mode === 'tasks' || mode === 'limit') check(); return; }
+    const v = video();
+    const blocked = mode === 'tasks' || mode === 'limit';
+    if (blocked) { if (v && !v.paused) { window.__ytcUserPaused = true; v.pause(); } check(); return; }
+    if (dt && v && onWatch() && !v.paused && !v.ended && v.readyState > 1) {
+      const d = day();
+      d.watched += dt; d.since += dt;
+      saveDay(d);
+    }
+    check();
+  }
+  // пускане (вкл. от заключения екран), докато е заключено → веднага пауза
+  document.addEventListener('play', (e) => {
+    if ((mode === 'tasks' || mode === 'limit') && e.target && e.target.pause) { window.__ytcUserPaused = true; e.target.pause(); }
+  }, true);
+  setInterval(tick, 1000);
+  const boot = () => setTimeout(() => check(), 800);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
 
 /* YT Контрол – интерфейс в стил мобилно приложение (bottom sheet). Без innerHTML заради Trusted Types. */
@@ -2186,6 +3458,11 @@
         sheet.appendChild(lb);
       }
 
+      const kb = el('button', 'act', '👨‍👩‍👧 Родителски контрол' + (YTC.kids && YTC.kids.active() ? ' – включен' : ''));
+      kb.style.color = '#30d158';
+      kb.addEventListener('click', () => { close(); if (YTC.kids) YTC.kids.openSettings(); });
+      sheet.appendChild(kb);
+
       note = el('div', 'note');
       note.appendChild(el('span', null, 'Някои промени важат напълно след презареждане.'));
       const rl = el('button', null, 'Презареди'); rl.addEventListener('click', () => location.reload());
@@ -2246,7 +3523,9 @@
     function rebuild() { const wasOpen = !!wrap; if (wrap) wrap.remove(); wrap = null; if (wasOpen) { build(); wrap.classList.add('open'); } }
 
     let prevOverflow = '';
-    function open() {
+    // при включен родителски контрол настройките искат ПИН (иначе детето просто би го изключило)
+    function open() { if (YTC.kids) YTC.kids.guard(openNow); else openNow(); }
+    function openNow() {
       mount();
       if (wrap) wrap.remove();
       build();

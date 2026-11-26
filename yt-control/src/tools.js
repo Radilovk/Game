@@ -221,7 +221,8 @@
   .sw i:after{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;transition:transform .2s}
   .sw input:checked+i{background:#30d158}.sw input:checked+i:after{transform:translateX(20px)}
   .info{margin:12px 4px 0;color:#8e8e93;font-size:13px}
-  .acts{display:flex;gap:8px;margin-bottom:4px}
+  .acts{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:4px}
+  .acts .a{flex:1 1 calc(50% - 4px)}
   .a{flex:1;border:0;border-radius:12px;background:#2c2c2e;color:#f2f2f7;font:600 14px inherit;padding:12px 6px}
   .a.on{background:#30d158;color:#000}
   .ch{display:flex;gap:10px;align-items:baseline;width:100%;border:0;background:#2c2c2e;color:#f2f2f7;font:14px inherit;text-align:left;padding:11px 12px;border-radius:10px;margin-top:6px}
@@ -286,6 +287,19 @@
       setL();
     });
     acts.appendChild(lb);
+    const hb = el('button', 'a', '');
+    const setH = () => { const on = YTC.fav && YTC.fav.has(curId); hb.textContent = on ? '❤️ В „Любими“' : '🤍 Любими'; hb.classList.toggle('on', !!on); };
+    setH();
+    hb.addEventListener('click', () => {
+      if (!YTC.fav) return;
+      if (YTC.fav.has(curId)) YTC.fav.remove(curId);
+      else YTC.fav.add({ id: curId, title: pageTitle(), channel: pageChannel(), dur: video() && isFinite(video().duration) ? fmt(video().duration) : '' });
+      setH();
+    });
+    acts.appendChild(hb);
+    const pb0 = el('button', 'a', '📂 Плейлист');
+    pb0.addEventListener('click', () => { close(); if (YTC.pickPlaylist) YTC.pickPlaylist({ id: curId, title: pageTitle(), channel: pageChannel(), dur: video() && isFinite(video().duration) ? fmt(video().duration) : '' }); });
+    acts.appendChild(pb0);
     const fb = el('button', 'a', '📺 Следвай канала');
     acts.appendChild(fb);
     if (YTC.videoOwner && YTC.subs) {
