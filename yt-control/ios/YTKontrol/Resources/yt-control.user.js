@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YT Контрол – блокер на Shorts и реклами (мобилен)
 // @namespace    yt-control
-// @version      3.6.2
+// @version      3.7.0
 // @description  Изрязва Shorts и рекламите от данните на m.youtube.com, преди да се покажат. Филтри по думи и канали, фокус режим.
 // @match        https://m.youtube.com/*
 // @match        https://radilovk.github.io/Game/yt-control/*
@@ -18,7 +18,7 @@
 (function () {
   'use strict';
   const YTC = (globalThis.YTC = globalThis.YTC || {});
-  YTC.VERSION = '3.6.2';
+  YTC.VERSION = '3.7.0';
   YTC.KEY = 'ytc-settings';
 
   YTC.SCHEMA = [
@@ -35,7 +35,7 @@
     { key: 'sponsorBlock', label: 'Прескачай спонсорските части в клиповете', hint: 'Данни от общността SponsorBlock. Изпраща се само част от хеша на видеото', def: true },
     { key: 'pip', label: 'Картина в картината (Android)', hint: 'При излизане от приложението видеото продължава в малко прозорче', def: true },
     { key: 'backgroundPlay', label: 'Слушане във фонов режим', hint: 'Продължава при заключен екран и в други приложения', def: true },
-    { key: 'navButtons', label: 'Бутон „Назад“ и подреден хедър', hint: '‹ върху видеото заедно с контролите (горе – при търсене и канали), 🔍 горе, без „Отваряне на приложението“', def: true },
+    { key: 'navButtons', label: 'Бутон „Назад“ и подреден хедър', hint: '‹ горе на всяка страница, връщане на същото място, 🔍, без „Отваряне на приложението“', def: true },
     { key: 'gestures', label: 'Жестове върху видеото', hint: 'Настрани – превъртане; вляво нагоре/надолу – яркост; вдясно – звук; в средата надолу – затваряне; задръж – 2×', def: true },
     { key: 'normalizeAudio', label: 'Изравнявай силата на звука', hint: 'Тихите клипове по-силно, силните по-тихо. Ако на iPhone звукът спре при заключен екран – изключи го', def: false },
     { key: 'watchStats', label: 'Статистика на гледането', hint: 'Време по дни и най-гледани канали – чип „Статистика“ на началната страница', def: true },
@@ -944,6 +944,8 @@
   /** Отваряне на видео без презареждане – през навигацията на самия YouTube (≈2 пъти по-бързо). */
   YTC.go = function (url) {
     try {
+      if (YTC.navSaveScroll) YTC.navSaveScroll();
+      window.__ytcFwd = Date.now();
       history.pushState({}, '', url);
       window.dispatchEvent(new PopStateEvent('popstate', { state: {} }));
       setTimeout(() => { if (!document.querySelector('ytm-watch') && location.pathname === '/watch') location.assign(url); }, 2500);
@@ -963,8 +965,28 @@
     w.className = 'wrap ' + (isDark() ? 'dark' : 'light');
   }
 
+  // При отваряне на видео началната страница само се скрива (не се изтрива) – при връщане е на същото място.
+  let feedScroll = 0, feedRestore = false;
+  const feedWrap = () => feedRoot && feedRoot.querySelector('.wrap');
+  function hideFeed() {
+    if (!feedHost || feedHost.dataset.hidden) return;
+    const w = feedWrap(); if (w) feedScroll = w.scrollTop;
+    feedHost.dataset.hidden = '1';
+    feedHost.style.visibility = 'hidden'; feedHost.style.pointerEvents = 'none';
+    document.documentElement.classList.remove('ytc-feed-on');
+  }
   function mountFeed() {
-    if (feedHost && feedHost.isConnected) { placeFeed(); return; }
+    if (feedHost && feedHost.isConnected) {
+      if (feedHost.dataset.hidden) {
+        delete feedHost.dataset.hidden;
+        feedHost.style.visibility = ''; feedHost.style.pointerEvents = '';
+        document.documentElement.classList.add('ytc-feed-on');
+        const w = feedWrap(); if (w && Math.abs(w.scrollTop - feedScroll) > 2) w.scrollTop = feedScroll;
+      }
+      placeFeed(); return;
+    }
+    // YouTube е изтрил слоя – изграждаме го наново и после връщаме мястото
+    if (feedScroll > 0) feedRestore = true;
     if (!document.body) return;
     feedHost = el('div'); feedHost.id = 'ytc-home';
     feedRoot = feedHost.attachShadow({ mode: 'open' });
@@ -990,10 +1012,13 @@
   }
   function unmountFeed() {
     if (feedHost) { feedHost.remove(); feedHost = null; feedRoot = null; feedList = null; }
+    feedScroll = 0;
     document.documentElement.classList.remove('ytc-feed-on');
   }
 
   let activeChip = 'all';
+  YTC.feedChip = () => (feedHost && !feedHost.dataset.hidden ? activeChip : 'all');
+  YTC.feedHomeChip = () => { if (!feedRoot) return; activeChip = 'all'; renderChips(); const w = feedWrap(); if (w) w.scrollTop = 0; startFeed(false); };
   const LOCAL_CHIP = /^(hist|subs|later|fav|pl|pl:.+|stats)$/;
   function openChip(id) {
     if (id === 'hist') showHistory(); else if (id === 'subs') showSubs(); else if (id === 'later') showLater();
@@ -1491,6 +1516,7 @@
     if (activeChip === 'all') { const c = continueRow(); if (c) feedList.appendChild(c); }
     items.forEach((it) => feedList.appendChild(card(it)));
     feedState.items = items;
+    if (feedRestore) { feedRestore = false; const w = feedWrap(); if (w) requestAnimationFrame(() => { w.scrollTop = feedScroll; }); }
     if (plain) LS.set(F_KEY, { t: Date.now(), items: items.slice(0, 40), seeds: feedState.seeds.slice(0, 20) });
   }
   function msg(h, p) { const b = el('div', 'msg'); b.appendChild(el('h2', null, h)); b.appendChild(el('p', null, p)); return b; }
@@ -1880,7 +1906,9 @@
   let lastPath = '';
   function refresh() {
     if (!document.body) return;
-    if (feedWanted()) mountFeed(); else unmountFeed();
+    if (feedWanted()) mountFeed();
+    else if (S.enabled && S.smartHome && !S.hideHomeFeed && feedHost) hideFeed();
+    else unmountFeed();
     if (ccWanted()) mountCC(); else unmountCC();
     followButtons();
     if (location.pathname !== lastPath) {
@@ -2554,9 +2582,11 @@
 
 /*
  * YT Контрол – навигация и хедър:
- *   • бутон „‹ Назад“ върху видеото (вижда се на пауза и при докосване) – затваря клипа с една стъпка
+ *   • „‹ Назад“ в хедъра на всяка страница извън началната (вкл. при клип) – една стъпка назад
+ *   • връщане на същото място: началната страница се пази, а на страниците на YouTube се помни докъде си скролнал
+ *     (важи и за „назад“ на Android и жеста от ръба на iPhone)
  *   • плъзгане надолу в средата на видеото – клипът се отмества надолу и се затваря
- *   • подреден хедър: без „Отваряне на приложението“, бутон „‹“ извън началната страница, бутон за търсене
+ *   • подреден хедър: без „Отваряне на приложението“, бутон за търсене
  */
 (function () {
   'use strict';
@@ -2580,6 +2610,7 @@
   // ======================================================== Една стъпка назад
   const watchUi = () => { const w = document.querySelector('ytm-watch, .watch-below-the-player'); return !!(w && w.getBoundingClientRect().height > 0); };
   YTC.navBack = function () {
+    if (location.pathname === '/' && YTC.feedChip && YTC.feedChip() !== 'all') { YTC.feedHomeChip(); return; }
     const v = video();
     if (isWatch() && v && !v.paused) { window.__ytcUserPaused = true; v.pause(); }
     const here = location.href;
@@ -2592,11 +2623,6 @@
 
   // ======================================================== Стил
   const CSS = `
-  .ytc-pback{position:fixed;left:8px;top:8px;z-index:2147483000;width:44px;height:44px;border:0;border-radius:50%;padding:0;
-    background:rgba(0,0,0,.55);color:#fff;display:flex;align-items:center;justify-content:center;
-    opacity:0;pointer-events:none;transition:opacity .2s;-webkit-tap-highlight-color:transparent}
-  .ytc-pback.on{opacity:1;pointer-events:auto}
-  .ytc-pback svg{width:28px;height:28px}
   .ytc-hbtn{flex:0 0 auto;width:40px;height:40px;border:0;border-radius:50%;padding:0;background:none;color:inherit;
     display:inline-flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent}
   .ytc-hbtn:active{background:rgba(128,128,128,.25)}
@@ -2617,58 +2643,52 @@
     document.head.appendChild(st); styled = true;
   }
 
-  // ======================================================== Бутон „Назад“ върху видеото
-  // Отделен слой над плейъра (не вътре в него) – така плейърът на YouTube не поглъща докосването.
-  // Вижда се заедно с контролите на YouTube (докосване на видеото), на пауза и в края.
-  let pb = null, showUntil = 0, pressed = false;
-  function controlsShown(p) {
-    const ov = p.querySelector('#player-control-overlay, .player-controls-overlay');
-    if (ov && /\bfadein\b/.test(ov.className)) return true;
-    const btn = p.querySelector('.player-control-play-pause-icon, button.icon-button.player-control-play-pause-icon, .player-controls-middle button, .ytp-play-button');
-    if (btn) {
-      // видимостта е сборна: YouTube скрива контролите чрез някой от родителите (opacity / visibility / display)
-      if (btn.getBoundingClientRect().width === 0) return false;
-      let op = 1;
-      for (let n = btn; n && n !== p.parentNode; n = n.parentElement) {
-        const cs = getComputedStyle(n);
-        if (cs.visibility === 'hidden' || cs.display === 'none') return false;
-        op *= +cs.opacity;
-      }
-      return op > 0.4;
-    }
-    return null;   // не можем да разберем – разчитаме на таймера
-  }
-  function mountPlayerBack() {
-    const p = player();
-    if (!on() || !isWatch() || !p) { if (pb) pb.classList.remove('on'); return; }
-    if (!pb || !pb.isConnected) {
-      pb = document.createElement('button');
-      pb.className = 'ytc-pback'; pb.type = 'button'; pb.setAttribute('aria-label', 'Назад');
-      pb.appendChild(icon(BACK));
-      const fire = (e) => { e.preventDefault(); e.stopPropagation(); if (pressed) return; pressed = true; setTimeout(() => { pressed = false; }, 800); pb.classList.remove('on'); YTC.navBack(); };
-      pb.addEventListener('touchstart', (e) => { e.stopPropagation(); }, { passive: true });
-      pb.addEventListener('touchend', fire);
-      pb.addEventListener('click', fire);
-      (document.body || document.documentElement).appendChild(pb);
-    }
-    const r = p.getBoundingClientRect();
-    const v = video();
-    const c = controlsShown(p);
-    const show = r.bottom > 60 && r.top < innerHeight - 60 && !document.fullscreenElement && !document.querySelector('.ad-showing') &&
-      (c === true || Date.now() < showUntil || (v && (v.ended || (v.paused && v.currentTime > 0 && c === null))));
-    pb.style.left = Math.round(r.left + 8) + 'px';
-    pb.style.top = Math.round(Math.max(r.top, 0) + 8) + 'px';
-    pb.classList.toggle('on', !!show);
-  }
-  // докосване на видеото → бутонът се показва заедно с контролите (3 сек., ако не можем да ги следим)
-  document.addEventListener('touchstart', (e) => {
-    if (e.target && e.target.closest && e.target.closest('.html5-video-player')) { showUntil = Date.now() + 3000; setTimeout(mountPlayerBack, 0); setTimeout(mountPlayerBack, 350); }
-  }, { capture: true, passive: true });
+  // ======================================================== Памет за мястото (скрол) по адрес
+  const POS_KEY = 'ytc-scroll';
+  const urlKey = () => location.pathname + location.search;
+  let pos = {}; try { pos = JSON.parse(sessionStorage.getItem(POS_KEY) || '{}') || {}; } catch (e) { /* */ }
+  let pinnedUntil = 0, curKey = urlKey(), restoring = null;
+  const savePos = () => { try { const k = Object.keys(pos); if (k.length > 60) delete pos[k[0]]; sessionStorage.setItem(POS_KEY, JSON.stringify(pos)); } catch (e) { /* */ } };
+  // точно преди да тръгнеш нанякъде (докосване на линк/карта) – запомняме мястото и го пазим от нулирането на YouTube
+  YTC.navSaveScroll = function () {
+    if (restoring) return;
+    pos[urlKey()] = window.scrollY; pinnedUntil = Date.now() + 1500; savePos();
+  };
   document.addEventListener('click', (e) => {
-    if (e.target && e.target.closest && e.target.closest('.html5-video-player')) { showUntil = Date.now() + 3000; setTimeout(mountPlayerBack, 350); }
+    const a = e.target && e.target.closest && e.target.closest('a[href], ytm-video-with-context-renderer, ytm-compact-video-renderer, ytm-rich-item-renderer, ytm-shorts-lockup-view-model, yt-lockup-view-model, ytm-media-item');
+    if (a) YTC.navSaveScroll();
   }, true);
-  ['pause', 'play', 'ended'].forEach((t) => document.addEventListener(t, () => setTimeout(mountPlayerBack, 30), true));
-  window.addEventListener('scroll', () => { if (pb && pb.classList.contains('on')) mountPlayerBack(); }, { passive: true });
+  let st = 0;
+  window.addEventListener('scroll', () => {
+    if (restoring || Date.now() < pinnedUntil) return;
+    clearTimeout(st); st = setTimeout(() => { if (Date.now() >= pinnedUntil && !restoring) { pos[urlKey()] = window.scrollY; savePos(); } }, 200);
+  }, { passive: true });
+  // връщане назад (бутон, Android „назад“, жест от ръба) → скролваме до запомненото, докато съдържанието се зарежда
+  let backNav = false;
+  window.addEventListener('popstate', () => { backNav = !(window.__ytcFwd && Date.now() - window.__ytcFwd < 500); });
+  function restore(target) {
+    if (restoring) restoring.stop();
+    const t0 = Date.now(); let ok = 0;
+    const stop = () => { clearInterval(iv); document.removeEventListener('touchstart', stop, true); restoring = null; };
+    const iv = setInterval(() => {
+      const max = document.documentElement.scrollHeight - innerHeight;
+      window.scrollTo(0, Math.min(target, Math.max(0, max)));
+      ok = Math.abs(window.scrollY - target) < 4 ? ok + 1 : 0;
+      if (ok >= 3 || Date.now() - t0 > 5000) stop();
+    }, 150);
+    document.addEventListener('touchstart', stop, true);   // докоснеш ли – спираме, за да не пречим
+    restoring = { stop };
+  }
+  function onUrlChange() {
+    const k = urlKey();
+    if (k === curKey) return;
+    curKey = k;
+    const back = backNav; backNav = false;
+    if (!back) return;
+    if (location.pathname === '/' && document.getElementById('ytc-home')) return;   // нашата начална страница си пази мястото сама
+    const y = pos[k];
+    if (y > 50) restore(y);
+  }
 
   // ======================================================== Плъзгане надолу = затваряне (вика се от жестовете)
   YTC.dragClose = {
@@ -2725,9 +2745,9 @@
     }
     const upsell = hideUpsell(top);
     const logo = top.querySelector('ytm-home-logo, .mobile-topbar-header-endpoint');
-    // „‹“ горе – само където няма видео (търсене, канал…); при клип е върху самото видео
+    // „‹“ горе – навсякъде извън началната страница (и в Любими, Плейлисти… на началната)
     let hb = top.querySelector('.ytc-hback');
-    if (location.pathname !== '/' && !isWatch() && logo) {
+    if (logo && (location.pathname !== '/' || (YTC.feedChip && YTC.feedChip() !== 'all'))) {
       if (!hb) {
         hb = document.createElement('button'); hb.type = 'button'; hb.className = 'ytc-hbtn ytc-hback'; hb.setAttribute('aria-label', 'Назад');
         hb.appendChild(icon(BACK));
@@ -2772,11 +2792,10 @@
   YTC.openSearch = openSearch;
 
   // ======================================================== Цикъл
-  function tick() { if (!document.body) return; style(); header(); mountPlayerBack(); }
+  function tick() { if (!document.body) return; style(); onUrlChange(); header(); }
   YTC.navApply = (s) => { S = s; tick(); };
   setInterval(tick, 700);
-  setInterval(() => { if (isWatch()) mountPlayerBack(); }, 250);
-  window.addEventListener('popstate', () => setTimeout(tick, 50));
+  window.addEventListener('popstate', () => { setTimeout(tick, 50); setTimeout(tick, 400); });
 })();
 
 /*

@@ -401,6 +401,8 @@
   /** Отваряне на видео без презареждане – през навигацията на самия YouTube (≈2 пъти по-бързо). */
   YTC.go = function (url) {
     try {
+      if (YTC.navSaveScroll) YTC.navSaveScroll();
+      window.__ytcFwd = Date.now();
       history.pushState({}, '', url);
       window.dispatchEvent(new PopStateEvent('popstate', { state: {} }));
       setTimeout(() => { if (!document.querySelector('ytm-watch') && location.pathname === '/watch') location.assign(url); }, 2500);
@@ -420,8 +422,28 @@
     w.className = 'wrap ' + (isDark() ? 'dark' : 'light');
   }
 
+  // При отваряне на видео началната страница само се скрива (не се изтрива) – при връщане е на същото място.
+  let feedScroll = 0, feedRestore = false;
+  const feedWrap = () => feedRoot && feedRoot.querySelector('.wrap');
+  function hideFeed() {
+    if (!feedHost || feedHost.dataset.hidden) return;
+    const w = feedWrap(); if (w) feedScroll = w.scrollTop;
+    feedHost.dataset.hidden = '1';
+    feedHost.style.visibility = 'hidden'; feedHost.style.pointerEvents = 'none';
+    document.documentElement.classList.remove('ytc-feed-on');
+  }
   function mountFeed() {
-    if (feedHost && feedHost.isConnected) { placeFeed(); return; }
+    if (feedHost && feedHost.isConnected) {
+      if (feedHost.dataset.hidden) {
+        delete feedHost.dataset.hidden;
+        feedHost.style.visibility = ''; feedHost.style.pointerEvents = '';
+        document.documentElement.classList.add('ytc-feed-on');
+        const w = feedWrap(); if (w && Math.abs(w.scrollTop - feedScroll) > 2) w.scrollTop = feedScroll;
+      }
+      placeFeed(); return;
+    }
+    // YouTube е изтрил слоя – изграждаме го наново и после връщаме мястото
+    if (feedScroll > 0) feedRestore = true;
     if (!document.body) return;
     feedHost = el('div'); feedHost.id = 'ytc-home';
     feedRoot = feedHost.attachShadow({ mode: 'open' });
@@ -447,10 +469,13 @@
   }
   function unmountFeed() {
     if (feedHost) { feedHost.remove(); feedHost = null; feedRoot = null; feedList = null; }
+    feedScroll = 0;
     document.documentElement.classList.remove('ytc-feed-on');
   }
 
   let activeChip = 'all';
+  YTC.feedChip = () => (feedHost && !feedHost.dataset.hidden ? activeChip : 'all');
+  YTC.feedHomeChip = () => { if (!feedRoot) return; activeChip = 'all'; renderChips(); const w = feedWrap(); if (w) w.scrollTop = 0; startFeed(false); };
   const LOCAL_CHIP = /^(hist|subs|later|fav|pl|pl:.+|stats)$/;
   function openChip(id) {
     if (id === 'hist') showHistory(); else if (id === 'subs') showSubs(); else if (id === 'later') showLater();
@@ -948,6 +973,7 @@
     if (activeChip === 'all') { const c = continueRow(); if (c) feedList.appendChild(c); }
     items.forEach((it) => feedList.appendChild(card(it)));
     feedState.items = items;
+    if (feedRestore) { feedRestore = false; const w = feedWrap(); if (w) requestAnimationFrame(() => { w.scrollTop = feedScroll; }); }
     if (plain) LS.set(F_KEY, { t: Date.now(), items: items.slice(0, 40), seeds: feedState.seeds.slice(0, 20) });
   }
   function msg(h, p) { const b = el('div', 'msg'); b.appendChild(el('h2', null, h)); b.appendChild(el('p', null, p)); return b; }
@@ -1337,7 +1363,9 @@
   let lastPath = '';
   function refresh() {
     if (!document.body) return;
-    if (feedWanted()) mountFeed(); else unmountFeed();
+    if (feedWanted()) mountFeed();
+    else if (S.enabled && S.smartHome && !S.hideHomeFeed && feedHost) hideFeed();
+    else unmountFeed();
     if (ccWanted()) mountCC(); else unmountCC();
     followButtons();
     if (location.pathname !== lastPath) {
