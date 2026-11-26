@@ -286,6 +286,16 @@
       setL();
     });
     acts.appendChild(lb);
+    const hb = el('button', 'a', '');
+    const setH = () => { const on = YTC.fav && YTC.fav.has(curId); hb.textContent = on ? '❤️ В „Любими“' : '🤍 Любими'; hb.classList.toggle('on', !!on); };
+    setH();
+    hb.addEventListener('click', () => {
+      if (!YTC.fav) return;
+      if (YTC.fav.has(curId)) YTC.fav.remove(curId);
+      else YTC.fav.add({ id: curId, title: pageTitle(), channel: pageChannel(), dur: video() && isFinite(video().duration) ? fmt(video().duration) : '' });
+      setH();
+    });
+    acts.appendChild(hb);
     const fb = el('button', 'a', '📺 Следвай канала');
     acts.appendChild(fb);
     if (YTC.videoOwner && YTC.subs) {

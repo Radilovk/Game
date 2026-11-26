@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YT Контрол – блокер на Shorts и реклами (мобилен)
 // @namespace    yt-control
-// @version      3.3.1
+// @version      3.4.0
 // @description  Изрязва Shorts и рекламите от данните на m.youtube.com, преди да се покажат. Филтри по думи и канали, фокус режим.
 // @match        https://m.youtube.com/*
 // @match        https://radilovk.github.io/Game/yt-control/*
@@ -18,7 +18,7 @@
 (function () {
   'use strict';
   const YTC = (globalThis.YTC = globalThis.YTC || {});
-  YTC.VERSION = '3.3.1';
+  YTC.VERSION = '3.4.0';
   YTC.KEY = 'ytc-settings';
 
   YTC.SCHEMA = [
@@ -683,7 +683,14 @@
     add(it) { if (!it || !it.id || this.has(it.id)) return; const a = this.all(); a.unshift({ id: it.id, title: it.title, channel: it.channel, dur: it.dur, thumb: it.thumb, t: Date.now() }); LS.set(LATER_KEY, a.slice(0, 500)); },
     remove(id) { LS.set(LATER_KEY, this.all().filter((x) => x.id !== id)); },
   };
-  YTC.subs = subs; YTC.later = later;
+  const FAV_KEY = 'ytc-fav';
+  const fav = {
+    all() { return LS.get(FAV_KEY, []); },
+    has(id) { return !!id && this.all().some((x) => x.id === id); },
+    add(it) { if (!it || !it.id || this.has(it.id)) return; const a = this.all(); a.unshift({ id: it.id, title: it.title, channel: it.channel, dur: it.dur, thumb: it.thumb, t: Date.now() }); LS.set(FAV_KEY, a.slice(0, 1000)); },
+    remove(id) { LS.set(FAV_KEY, this.all().filter((x) => x.id !== id)); },
+  };
+  YTC.subs = subs; YTC.later = later; YTC.fav = fav;
   let disCache = null;
   const dismissed = () => disCache || (disCache = new Set(LS.get(DIS_KEY, [])));
   function dismiss(id) { const a = LS.get(DIS_KEY, []); a.unshift(id); LS.set(DIS_KEY, a.slice(0, 2000)); disCache = null; }
@@ -920,12 +927,13 @@
       c.addEventListener('click', () => {
         if (id === 'edit') { showPicker(); return; }
         activeChip = id; renderChips();
-        if (id === 'hist') showHistory(); else if (id === 'subs') showSubs(); else if (id === 'later') showLater(); else startFeed(true);
+        if (id === 'hist') showHistory(); else if (id === 'subs') showSubs(); else if (id === 'later') showLater(); else if (id === 'fav') showFav(); else startFeed(true);
       });
       chips.appendChild(c);
     };
     add('all', 'За теб');
     add('subs', '📺 Абонаменти');
+    add('fav', '❤️ Любими');
     add('later', '⏱ По-късно');
     add('hist', '🕘 История');
     ints.forEach((i) => add('i:' + i, i));
@@ -936,7 +944,7 @@
   function renderSorts() {
     const row = feedRoot.querySelector('.sorts');
     while (row.firstChild) row.removeChild(row.firstChild);
-    if (activeChip === 'hist' || activeChip === 'subs' || activeChip === 'later') { row.style.display = 'none'; return; }
+    if (/^(hist|subs|later|fav)$/.test(activeChip)) { row.style.display = 'none'; return; }
     row.style.display = '';
     for (const [k, l] of SORTS) {
       const c = el('button', 'chip' + (view.sort === k ? ' on' : ''), l);
@@ -1064,6 +1072,8 @@
     back.addEventListener('click', close);
     sh.appendChild(el('div', 'mtitle', it.title));
     const act = (label, fn) => { const b = el('button', 'mrow', label); b.addEventListener('click', () => { close(); fn(); }); sh.appendChild(b); };
+    if (fav.has(it.id)) act('💔 Махни от „Любими“', () => { fav.remove(it.id); if (activeChip === 'fav') cardEl.remove(); toastMsg('Махнато от „Любими“'); });
+    else act('❤️ Добави в „Любими“', () => { fav.add(it); toastMsg('❤️ Добавено в „Любими“'); });
     if (later.has(it.id)) act('⏱ Махни от „По-късно“', () => { later.remove(it.id); if (activeChip === 'later') cardEl.remove(); toastMsg('Махнато от „По-късно“'); });
     else act('⏱ Гледай по-късно', () => { later.add(it); toastMsg('✓ Запазено в „По-късно“'); });
     if (it.chId) {
@@ -1169,6 +1179,23 @@
     for (const x of list) feedList.appendChild(card(x));
   }
 
+  // ---------- Любими ----------
+  function showFav() {
+    while (feedList.firstChild) feedList.removeChild(feedList.firstChild);
+    const list = fav.all();
+    if (!list.length) { feedList.appendChild(msg('Нямаш любими видеа', 'Добавяй с „⋮ → Добави в „Любими““ на картите или с ❤️ от бутона „Инструменти“ при гледане. Остават, докато не ги махнеш.')); return; }
+    const top = el('div', 'hhead');
+    top.appendChild(el('h4', null, list.length + ' ' + (list.length === 1 ? 'любимо видео' : 'любими видеа')));
+    feedList.appendChild(top);
+    for (const x of list) {
+      const c = card(x);
+      const del = el('button', 'x', '✕');
+      del.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); fav.remove(x.id); c.remove(); });
+      c.appendChild(del);
+      feedList.appendChild(c);
+    }
+  }
+
   function skeleton(n) { for (let i = 0; i < n; i++) feedList.appendChild(el('div', 'sk')); }
   function clearSkeleton() { feedList.querySelectorAll('.sk, .more, .msg').forEach((e) => e.remove()); }
 
@@ -1255,7 +1282,7 @@
   function msg(h, p) { const b = el('div', 'msg'); b.appendChild(el('h2', null, h)); b.appendChild(el('p', null, p)); return b; }
 
   async function loadMore() {
-    if (!feedList || feedState.loading || feedState.done || /^(hist|subs|later)$/.test(activeChip)) return;
+    if (!feedList || feedState.loading || feedState.done || /^(hist|subs|later|fav)$/.test(activeChip)) return;
     if (!feedState.seeds.length && !activeChip.startsWith('i:') && !LS.get(I_KEY, []).length) { feedState.done = true; return; }
     feedState.loading = true;
     const m = el('div', 'more', 'Зареждане…'); feedList.appendChild(m);
@@ -1511,13 +1538,43 @@
   ['play', 'playing', 'pause', 'ended', 'emptied'].forEach((t) => document.addEventListener(t, () => setTimeout(reportMedia, 50), true));
 
   // iOS приложение: при излизане iOS понякога спира видеото. Ако не си го спрял ти – пускаме го отново.
-  let wasPlaying = false;
-  document.addEventListener('playing', () => { wasPlaying = true; window.__ytcUserPaused = false; }, true);
+  // Само в първите секунди след излизането: пауза по-късно (заключен екран, слушалки, обаждане) е решение на потребителя.
+  const BG_GRACE = 3000;
+  let bgVal = window.__ytcBg, bgAt = bgVal ? Date.now() : 0;
+  try {
+    Object.defineProperty(window, '__ytcBg', { configurable: true,
+      get: () => bgVal, set: (x) => { if (x && !bgVal) bgAt = Date.now(); bgVal = x; } });
+  } catch (e) { /* */ }
+  const justLeft = () => bgVal && Date.now() - bgAt < BG_GRACE;
+  let wasPlaying = false, lastPauseAt = 0, lastPlayAt = 0, lastCmdAt = 0;
+  const userPause = () => { window.__ytcUserPaused = true; lastCmdAt = Date.now(); };
+  const userPlay = () => { window.__ytcUserPaused = false; lastCmdAt = Date.now(); };
+  // Заключеният екран на iOS праща командите и директно към страницата (Media Session на YouTube).
+  // Обвиваме обработчиците, за да знаем, че паузата е от потребителя и да не я „поправяме“.
+  try {
+    const ms = navigator.mediaSession;
+    if (window.YTCApp && ms && typeof ms.setActionHandler === 'function' && !ms.__ytcWrapped) {
+      const orig = ms.setActionHandler.bind(ms);
+      const mark = (a) => { if (a === 'pause' || a === 'stop') userPause(); else if (a === 'play') userPlay(); };
+      ms.setActionHandler = function (action, fn) {
+        if (typeof fn !== 'function') return orig(action, fn);
+        return orig(action, function (d) { mark(action); return fn.apply(this, arguments); });
+      };
+      ms.__ytcWrapped = true;
+      // ако YouTube не е задал свои – наши (иначе WebKit спира видеото, без да знаем)
+      const vid = () => document.querySelector('.html5-video-player video, video');
+      orig('pause', () => { userPause(); const v = vid(); if (v) v.pause(); });
+      orig('play', () => { userPlay(); const v = vid(); if (v) v.play().catch(() => {}); });
+    }
+  } catch (e) { /* */ }
+  document.addEventListener('playing', () => { wasPlaying = true; lastPlayAt = Date.now(); if (Date.now() - lastCmdAt > 1500) window.__ytcUserPaused = false; }, true);
   document.addEventListener('pause', (e) => {
     const v = e.target;
-    if (!window.__ytcBg || window.__ytcUserPaused || !wasPlaying || !S.backgroundPlay || v.ended) { wasPlaying = !v.paused; return; }
+    lastPauseAt = Date.now();
+    if (!bgVal || window.__ytcUserPaused || !wasPlaying || !S.backgroundPlay || v.ended) { wasPlaying = !v.paused; return; }
+    if (!justLeft()) { window.__ytcUserPaused = true; wasPlaying = false; return; }   // пауза от заключения екран / системата
     if (document.querySelector('.ad-showing')) return;
-    setTimeout(() => { if (window.__ytcBg && !window.__ytcUserPaused && v.paused) v.play().catch(() => {}); }, 200);
+    setTimeout(() => { if (bgVal && !window.__ytcUserPaused && v.paused) v.play().catch(() => {}); }, 200);
   }, true);
   // докосване на пауза в самата страница = решение на потребителя
   document.addEventListener('click', (e) => {
@@ -1525,14 +1582,19 @@
       setTimeout(() => { const v = document.querySelector('.html5-video-player video'); if (v && v.paused) window.__ytcUserPaused = true; }, 300);
     }
   }, true);
-  // команди от известието / заключения екран
+  // команди от известието / заключения екран (през приложението)
   YTC.mediaCommand = function (cmd) {
     const v = document.querySelector('.html5-video-player video, video');
     if (!v) return;
-    // команда от заключения екран / известието = решение на потребителя
-    window.__ytcUserPaused = cmd === 'pause' || (cmd === 'toggle' && !v.paused);
-    if (cmd === 'play') v.play().catch(() => {}); else if (cmd === 'pause') v.pause();
-    else if (cmd === 'toggle') { if (v.paused) v.play().catch(() => {}); else v.pause(); }
+    const now = Date.now();
+    if (cmd === 'toggle') {
+      // същото натискане може вече да е стигнало до страницата директно – не го обръщаме обратно
+      if (v.paused && now - lastPauseAt < 1000) { userPause(); return; }
+      if (!v.paused && now - lastPlayAt < 1000) { userPlay(); return; }
+      cmd = v.paused ? 'play' : 'pause';
+    }
+    if (cmd === 'pause') { userPause(); if (!v.paused) v.pause(); }
+    else if (cmd === 'play') { userPlay(); if (v.paused) v.play().catch(() => {}); }
   };
 
   // ======================================================== Бутон „Следвай“ (вместо „Абониране“, което иска профил)
@@ -1920,6 +1982,16 @@
       setL();
     });
     acts.appendChild(lb);
+    const hb = el('button', 'a', '');
+    const setH = () => { const on = YTC.fav && YTC.fav.has(curId); hb.textContent = on ? '❤️ В „Любими“' : '🤍 Любими'; hb.classList.toggle('on', !!on); };
+    setH();
+    hb.addEventListener('click', () => {
+      if (!YTC.fav) return;
+      if (YTC.fav.has(curId)) YTC.fav.remove(curId);
+      else YTC.fav.add({ id: curId, title: pageTitle(), channel: pageChannel(), dur: video() && isFinite(video().duration) ? fmt(video().duration) : '' });
+      setH();
+    });
+    acts.appendChild(hb);
     const fb = el('button', 'a', '📺 Следвай канала');
     acts.appendChild(fb);
     if (YTC.videoOwner && YTC.subs) {
