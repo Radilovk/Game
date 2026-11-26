@@ -173,6 +173,7 @@
     if (YTC.featuresApply) YTC.featuresApply(ns);
     if (YTC.toolsApply) YTC.toolsApply(ns);
     if (YTC.mediaApply) YTC.mediaApply(ns);
+    if (YTC.navApply) YTC.navApply(ns);
     document.querySelectorAll('[data-ytc-hidden]').forEach((e) => e.removeAttribute('data-ytc-hidden'));
     lastHref = '';
     if (!S.enabled && document.documentElement) document.documentElement.classList.remove('ytc-home');
@@ -184,6 +185,7 @@
     if (YTC.featuresApply) YTC.featuresApply(initial);
     if (YTC.toolsApply) YTC.toolsApply(initial);
     if (YTC.mediaApply) YTC.mediaApply(initial);
+    if (YTC.navApply) YTC.navApply(initial);
     document.addEventListener('click', onClick, true);
     ['state-navigateend', 'yt-navigate-finish', 'popstate'].forEach((ev) => window.addEventListener(ev, schedule, true));
     new MutationObserver(schedule).observe(document, { childList: true, subtree: true });

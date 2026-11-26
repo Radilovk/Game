@@ -179,7 +179,8 @@
     if (e.target.closest('.ytp-progress-bar, .ytm-progress-bar, [role="slider"], .player-controls-bottom, button')) { g = null; return; }
     const r = p.getBoundingClientRect(), t = e.touches[0];
     if (curVideo() !== lastVid) { lastVid = curVideo(); setDim(0); }
-    g = { x: t.clientX, y: t.clientY, r, axis: '', v, t0: v.currentTime, right: t.clientX > r.left + r.width / 2,
+    const fx = (t.clientX - r.left) / r.width;
+    g = { x: t.clientX, y: t.clientY, r, axis: '', v, t0: v.currentTime, right: t.clientX > r.left + r.width / 2, mid: fx > 0.3 && fx < 0.7,
       dim: dim ? +dim.style.opacity || 0 : 0, vol: 1, hold: 0, rate: 1 };
     const c = chains.get(v);
     g.vol = c && c.vol ? c.vol.gain.value : v.volume;
@@ -205,6 +206,9 @@
       g.seek = Math.max(0, Math.min(d - 1, g.t0 + dx / g.r.width * Math.min(180, Math.max(60, d / 4))));
       const delta = Math.round(g.seek - g.t0);
       hint((delta >= 0 ? '⏩ +' : '⏪ −') + Math.abs(delta) + ' с  (' + fmt(g.seek) + ')');
+    } else if (g.mid) {
+      // средата: плъзгане надолу отмества клипа и го затваря
+      if (YTC.dragClose && S.navButtons !== false && !document.fullscreenElement) { g.drag = dy; YTC.dragClose.move(dy, g.r.height); }
     } else {
       const k = -dy / (g.r.height * 0.9);
       if (!g.right) {
@@ -223,6 +227,7 @@
     clearTimeout(g.hold);
     if (g.axis === 'x' && typeof g.seek === 'number') g.v.currentTime = g.seek;
     if (g.axis === 'hold') g.v.playbackRate = g.rate || 1;
+    if (g.axis === 'y' && g.mid && typeof g.drag === 'number' && YTC.dragClose) YTC.dragClose.end(g.drag, g.r.height);
     if (g.axis) suppressClick = Date.now();
     g = null;
   }
