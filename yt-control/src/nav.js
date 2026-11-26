@@ -139,9 +139,9 @@
     }
     const upsell = hideUpsell(top);
     const logo = top.querySelector('ytm-home-logo, .mobile-topbar-header-endpoint');
-    // „‹“ навсякъде извън началната страница
+    // „‹“ горе – само където няма видео (търсене, канал…); при клип е върху самото видео
     let hb = top.querySelector('.ytc-hback');
-    if (location.pathname !== '/' && logo) {
+    if (location.pathname !== '/' && !isWatch() && logo) {
       if (!hb) {
         hb = document.createElement('button'); hb.type = 'button'; hb.className = 'ytc-hbtn ytc-hback'; hb.setAttribute('aria-label', 'Назад');
         hb.appendChild(icon(BACK));

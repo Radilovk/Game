@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YT Контрол – блокер на Shorts и реклами (мобилен)
 // @namespace    yt-control
-// @version      3.6.0
+// @version      3.6.1
 // @description  Изрязва Shorts и рекламите от данните на m.youtube.com, преди да се покажат. Филтри по думи и канали, фокус режим.
 // @match        https://m.youtube.com/*
 // @match        https://radilovk.github.io/Game/yt-control/*
@@ -18,7 +18,7 @@
 (function () {
   'use strict';
   const YTC = (globalThis.YTC = globalThis.YTC || {});
-  YTC.VERSION = '3.6.0';
+  YTC.VERSION = '3.6.1';
   YTC.KEY = 'ytc-settings';
 
   YTC.SCHEMA = [
@@ -35,7 +35,7 @@
     { key: 'sponsorBlock', label: 'Прескачай спонсорските части в клиповете', hint: 'Данни от общността SponsorBlock. Изпраща се само част от хеша на видеото', def: true },
     { key: 'pip', label: 'Картина в картината (Android)', hint: 'При излизане от приложението видеото продължава в малко прозорче', def: true },
     { key: 'backgroundPlay', label: 'Слушане във фонов режим', hint: 'Продължава при заключен екран и в други приложения', def: true },
-    { key: 'navButtons', label: 'Бутон „Назад“ и подреден хедър', hint: '‹ върху видеото на пауза, ‹ и 🔍 горе, без „Отваряне на приложението“', def: true },
+    { key: 'navButtons', label: 'Бутон „Назад“ и подреден хедър', hint: '‹ върху видеото на пауза (горе – при търсене и канали), 🔍 горе, без „Отваряне на приложението“', def: true },
     { key: 'gestures', label: 'Жестове върху видеото', hint: 'Настрани – превъртане; вляво нагоре/надолу – яркост; вдясно – звук; в средата надолу – затваряне; задръж – 2×', def: true },
     { key: 'normalizeAudio', label: 'Изравнявай силата на звука', hint: 'Тихите клипове по-силно, силните по-тихо. Ако на iPhone звукът спре при заключен екран – изключи го', def: false },
     { key: 'watchStats', label: 'Статистика на гледането', hint: 'Време по дни и най-гледани канали – чип „Статистика“ на началната страница', def: true },
@@ -2693,9 +2693,9 @@
     }
     const upsell = hideUpsell(top);
     const logo = top.querySelector('ytm-home-logo, .mobile-topbar-header-endpoint');
-    // „‹“ навсякъде извън началната страница
+    // „‹“ горе – само където няма видео (търсене, канал…); при клип е върху самото видео
     let hb = top.querySelector('.ytc-hback');
-    if (location.pathname !== '/' && logo) {
+    if (location.pathname !== '/' && !isWatch() && logo) {
       if (!hb) {
         hb = document.createElement('button'); hb.type = 'button'; hb.className = 'ytc-hbtn ytc-hback'; hb.setAttribute('aria-label', 'Назад');
         hb.appendChild(icon(BACK));
