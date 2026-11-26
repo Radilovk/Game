@@ -7,8 +7,13 @@
  *   node scripts/yt-kontrol-apple.mjs bundle    регистрира Bundle ID (ако го няма) и проверява, че има приложение в App Store Connect
  *   node scripts/yt-kontrol-apple.mjs prepare   сертификат + App Store профил само за това пускане (временен keychain)
  *   node scripts/yt-kontrol-apple.mjs cleanup   изтрива ги, ако качването не е минало (след успешно – остават до следващото)
+ *   node scripts/yt-kontrol-apple.mjs public    след качване: чака обработката, слага build-а във външната група
+ *                                               „Публичен линк“ (всеки с линка инсталира, без да е в екипа), изпраща го
+ *                                               за бета преглед (само ако трябва) и отпечатва публичния линк
  *
  * Env: APPSTORE_KEY_ID, APPSTORE_ISSUER_ID, APPSTORE_KEY_P8, APPLE_TEAM_ID, BUNDLE_ID (по подразбиране com.biocode.ytkontrol).
+ * За `public` (по желание, иначе се попълват веднъж в App Store Connect → TestFlight → Test Information):
+ *   YTK_CONTACT_EMAIL, YTK_CONTACT_FIRST, YTK_CONTACT_LAST, YTK_CONTACT_PHONE – контакт за бета прегледа на Apple.
  */
 import { createPrivateKey, sign, randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -49,6 +54,15 @@ async function api(method, path, body) {
 }
 const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8', ...opts });
 const summary = (t) => { if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, t + '\n'); console.log(t); };
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const GROUP = 'Публичен линк';
+const PRIVACY = 'https://radilovk.github.io/Game/yt-control/privacy.html';
+const DESCRIPTION = 'YT Kontrol opens the mobile YouTube website (m.youtube.com) in its own app with an on-device module: ' +
+  'it hides Shorts, adds history, favorites, playlists, watch statistics, background listening and an optional parental ' +
+  'control with age-appropriate math and logic tasks. No account needed. No data is collected.';
+const WHAT_TO_TEST = 'Open the app, watch a video, lock the screen and use play/pause from the lock screen. ' +
+  'Try Favorites and Playlists from the ⋮ menu, and Parental control from the 🛡 button.';
 
 const [action] = process.argv.slice(2);
 try {
@@ -116,8 +130,83 @@ try {
     for (const [what, path] of [['профил', st.profileId && `/v1/profiles/${st.profileId}`], ['сертификат', st.certId && `/v1/certificates/${st.certId}`]].filter((x) => x[1])) {
       try { await api('DELETE', path); console.log(`✓ изтрит ${what}`); } catch (e) { console.log(`! ${what} не се изтри: ${e.message}`); }
     }
+  } else if (action === 'public') {
+    const app = (await api('GET', `/v1/apps?filter[bundleId]=${encodeURIComponent(BUNDLE)}`)).data[0];
+    if (!app) fail(`Няма приложение с Bundle ID ${BUNDLE} в App Store Connect.`);
+    // 1. последният качен build – изчакваме Apple да го обработи (обикновено 5–20 мин)
+    let build = null;
+    for (let i = 0; i < 80; i++) {
+      build = (await api('GET', `/v1/builds?filter[app]=${app.id}&sort=-uploadedDate&limit=1`)).data[0] || null;
+      const st = build && build.attributes.processingState;
+      if (st === 'VALID') break;
+      if (st === 'FAILED' || st === 'INVALID') fail(`Build ${build.attributes.version} е отхвърлен при обработката (${st}).`);
+      console.log(`… чакам обработката на build-а (${st || 'още не се вижда'})`);
+      await sleep(30000);
+    }
+    if (!build || build.attributes.processingState !== 'VALID') fail('Build-ът не се обработи за 40 мин – пусни `public` отново по-късно.');
+    console.log(`✓ build ${build.attributes.version} е обработен`);
+
+    // 2. тестова информация (иска се за външно тестване)
+    const locs = (await api('GET', `/v1/apps/${app.id}/betaAppLocalizations`)).data;
+    const la = { description: DESCRIPTION, privacyPolicyUrl: PRIVACY };
+    if (process.env.YTK_CONTACT_EMAIL) la.feedbackEmail = process.env.YTK_CONTACT_EMAIL;
+    if (!locs.length) {
+      await api('POST', '/v1/betaAppLocalizations', { data: { type: 'betaAppLocalizations', attributes: { locale: 'en-US', ...la },
+        relationships: { app: { data: { type: 'apps', id: app.id } } } } });
+      console.log('✓ тестова информация (описание, поверителност)');
+    } else {
+      const cur = locs[0].attributes, miss = {};
+      for (const k in la) if (!cur[k]) miss[k] = la[k];
+      if (Object.keys(miss).length) await api('PATCH', `/v1/betaAppLocalizations/${locs[0].id}`, { data: { type: 'betaAppLocalizations', id: locs[0].id, attributes: miss } });
+    }
+    const c = process.env;
+    if (c.YTK_CONTACT_EMAIL && c.YTK_CONTACT_FIRST && c.YTK_CONTACT_LAST && c.YTK_CONTACT_PHONE) {
+      await api('PATCH', `/v1/betaAppReviewDetails/${app.id}`, { data: { type: 'betaAppReviewDetails', id: app.id, attributes: {
+        contactEmail: c.YTK_CONTACT_EMAIL, contactFirstName: c.YTK_CONTACT_FIRST, contactLastName: c.YTK_CONTACT_LAST, contactPhone: c.YTK_CONTACT_PHONE,
+        demoAccountRequired: false, notes: 'No login required. The app shows the public mobile YouTube website.' } } });
+      console.log('✓ контакт за бета прегледа');
+    }
+    try {
+      const bl = (await api('GET', `/v1/builds/${build.id}/betaBuildLocalizations`)).data;
+      if (!bl.length) await api('POST', '/v1/betaBuildLocalizations', { data: { type: 'betaBuildLocalizations', attributes: { locale: 'en-US', whatToTest: WHAT_TO_TEST },
+        relationships: { build: { data: { type: 'builds', id: build.id } } } } });
+    } catch (e) { console.log(`! „Какво да се тества“: ${e.message.slice(0, 200)}`); }
+
+    // 3. външна група с публичен линк
+    let g = (await api('GET', `/v1/betaGroups?filter[app]=${app.id}&filter[name]=${encodeURIComponent(GROUP)}`)).data[0];
+    if (!g) {
+      g = (await api('POST', '/v1/betaGroups', { data: { type: 'betaGroups',
+        attributes: { name: GROUP, publicLinkEnabled: true, publicLinkLimitEnabled: false, feedbackEnabled: true },
+        relationships: { app: { data: { type: 'apps', id: app.id } } } } })).data;
+      console.log(`✓ създадена група „${GROUP}“`);
+    } else if (!g.attributes.publicLinkEnabled) {
+      g = (await api('PATCH', `/v1/betaGroups/${g.id}`, { data: { type: 'betaGroups', id: g.id, attributes: { publicLinkEnabled: true, publicLinkLimitEnabled: false } } })).data;
+    }
+    try { await api('POST', `/v1/betaGroups/${g.id}/relationships/builds`, { data: [{ type: 'builds', id: build.id }] }); console.log('✓ build-ът е в групата'); }
+    catch (e) { console.log(`! добавяне в групата: ${e.message.slice(0, 200)}`); }
+
+    // 4. бета преглед на Apple – нужен за първия build на всяка версия; следващите обикновено минават автоматично
+    let review = '';
+    try {
+      const sub = await api('GET', `/v1/builds/${build.id}/betaAppReviewSubmission`);
+      review = sub.data ? sub.data.attributes.betaReviewState : '';
+    } catch (_) { /* няма подаване */ }
+    if (!review) {
+      try {
+        const r = await api('POST', '/v1/betaAppReviewSubmissions', { data: { type: 'betaAppReviewSubmissions', relationships: { build: { data: { type: 'builds', id: build.id } } } } });
+        review = r.data.attributes.betaReviewState || 'WAITING_FOR_REVIEW';
+        console.log('✓ изпратено за бета преглед');
+      } catch (e) {
+        review = 'НЕ Е ИЗПРАТЕН';
+        summary(`> ⚠️ Бета прегледът не можа да се заяви: ${e.message.slice(0, 300)}\n> Най-често липсва контакт: App Store Connect → TestFlight → **Test Information** (име, телефон, имейл) – попълва се веднъж. После пусни \`public\` отново.`);
+      }
+    }
+    g = (await api('GET', `/v1/betaGroups/${g.id}`)).data;
+    const link = g.attributes.publicLink || '(линкът ще се появи след одобрението)';
+    summary(`### 📲 Публичен линк за TestFlight\n${link}\n\nBuild ${build.attributes.version} · бета преглед: **${review}**\n\n` +
+      'Сложи линка в `yt-control/index.html` (константата `TESTFLIGHT`), за да се показва на страницата за инсталиране.');
   } else {
-    fail('действие: bundle | prepare | cleanup');
+    fail('действие: bundle | prepare | cleanup | public');
   }
 } catch (e) {
   fail(String(e.message).slice(0, 700));

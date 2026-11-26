@@ -83,6 +83,12 @@ p{margin:0 0 12px}
 .alert.on{display:block}
 .alert.warn{background:rgba(255,214,10,.1);border:1px solid rgba(255,214,10,.4);color:#ffe680}
 .alert.ok{background:rgba(48,209,88,.1);border:1px solid rgba(48,209,88,.45);color:#8af0a5}
+.choose{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.opt{border:1px solid var(--line);background:var(--card);color:var(--txt);border-radius:16px;padding:14px 12px;text-align:left;font:15px/1.35 inherit;cursor:pointer}
+.opt b{display:block;font-size:16px;margin-bottom:3px}.opt small{color:var(--mut);font-size:13px}
+.opt.on{border-color:var(--red);background:rgba(255,0,51,.08)}
+.opt .tag{display:inline-block;background:var(--ok);color:#000;border-radius:6px;font-size:11px;font-weight:700;padding:1px 6px;margin-left:4px;vertical-align:2px}
+.opt[disabled]{opacity:.55;cursor:default}
 .desk{display:none;text-align:center}
 .desk.on{display:block}
 .qr{width:200px;height:200px;margin:16px auto;padding:14px;background:var(--card);border:1px solid var(--line);border-radius:20px}
@@ -144,6 +150,10 @@ footer{padding:30px 0 calc(40px + env(safe-area-inset-bottom));color:var(--mut);
       <div class="card"><div class="ico">🎧</div><h3>Слушане във фонов режим</h3><p class="mut">Музика, подкасти и лекции продължават при заключен екран и в други приложения. На Android има и известие с бутони.</p></div>
       <div class="card"><div class="ico">💬</div><h3>Изтегляне на надписи</h3><p class="mut">Бутон „CC“ под всяко видео запазва надписите на телефона като SRT или текст, включително с автоматичен превод на български.</p></div>
       <div class="card"><div class="ico">📅</div><h3>Дата навсякъде</h3><p class="mut">Датата на качване се вижда и в препоръките под видеото, където YouTube не я показва.</p></div>
+      <div class="card"><div class="ico">❤️</div><h3>Любими и плейлисти</h3><p class="mut">Любими видеа и собствени плейлисти от „⋮“ на всяка карта или от „Инструменти“. Пускаш плейлиста и видеата вървят едно след друго. Търсене в историята, любимите и плейлистите.</p></div>
+      <div class="card"><div class="ico">👨‍👩‍👧</div><h3>Родителски контрол „Мисловна пауза“</h3><p class="mut">На всеки няколко минути видеото спира и детето решава задачи по математика и логика според възрастта си. Решиш ли ги, гледаш нататък. Плюс твърд дневен лимит и ПИН за родителя.</p></div>
+      <div class="card"><div class="ico">📊</div><h3>Статистика</h3><p class="mut">Колко време гледаш всеки ден, колко видеа и кои канали най-много. Всичко остава само на устройството.</p></div>
+      <div class="card"><div class="ico">👆</div><h3>Жестове</h3><p class="mut">Плъзни по видеото настрани за превъртане, вляво нагоре или надолу за яркост, вдясно за звук. Задръж пръст за 2× скорост.</p></div>
       <div class="card"><div class="ico">🧘</div><h3>Фокус режим</h3><p class="mut">Празна начална страница без препоръки. Можеш да скриеш и коментарите, излъчванията на живо, миксовете и вече гледаните видеа.</p></div>
     </div>
   </div>
@@ -165,7 +175,7 @@ footer{padding:30px 0 calc(40px + env(safe-area-inset-bottom));color:var(--mut);
 <section id="install">
   <div class="wrap">
     <h2>Инсталиране за 2 минути</h2>
-    <p class="mut"><b>Android:</b> самостоятелно приложение. <b>iPhone:</b> модул за Safari. Страницата е разпознала устройството ти и те води стъпка по стъпка.</p>
+    <p class="mut"><b>Android:</b> самостоятелно приложение. <b>iPhone:</b> приложение или модул за Safari. Страницата е разпознала устройството ти и те води стъпка по стъпка.</p>
 
     <div class="desk" id="desk">
       <div class="alert warn on">Отворил си страницата от компютър. Модулът е за телефон: сканирай кода с камерата на телефона.</div>
@@ -207,7 +217,31 @@ footer{padding:30px 0 calc(40px + env(safe-area-inset-bottom));color:var(--mut);
     </div>
 
     <!-- iOS -->
-    <div class="steps" data-panel="ios">
+    <div data-panel="ios">
+      <div class="choose">
+        <button class="opt" data-ios="app" type="button"><b>📲 Приложение <span class="tag">НАЙ-ЛЕСНО</span></b><small>3 докосвания. Слушане при заключен екран, всичко вградено.</small></button>
+        <button class="opt" data-ios="safari" type="button"><b>🧭 През Safari</b><small>Без приложение. С твоя Google профил.</small></button>
+      </div>
+    </div>
+    <div class="steps" data-panel="ios" data-ipanel="app">
+      <div class="step" data-step="t1">
+        <div class="hd"><div class="num"><span>1</span></div><h3>Изтегли TestFlight</h3></div>
+        <p class="mut">Безплатното приложение на Apple за тестови версии. През него се инсталира YT Контрол, докато е в тестов период.</p>
+        <div class="row"><a class="btn" href="https://apps.apple.com/app/testflight/id899247664">Изтегли TestFlight</a></div>
+        <button class="mark" data-mark="t1">Готово, върнах се ✓</button>
+      </div>
+      <div class="step" data-step="t2">
+        <div class="hd"><div class="num"><span>2</span></div><h3>Вземи YT Контрол</h3></div>
+        <p class="mut">Бутонът отваря TestFlight. Натисни <span class="kbd">Accept</span> (Приемам), после <span class="kbd">Install</span> (Инсталирай).</p>
+        <div class="row"><a class="btn" id="tfBtn" href="#">Инсталирай YT Контрол</a></div>
+        <button class="mark" data-mark="t2">Готово ✓</button>
+      </div>
+      <div class="step" data-step="t3">
+        <div class="hd"><div class="num"><span>3</span></div><h3>Отвори го</h3></div>
+        <p class="mut">Иконата с червения щит е на началния екран. YouTube се отваря директно, без Shorts и без реклами. Новите функции идват сами, без нова инсталация. Нова версия на самото приложение TestFlight показва като обновление.</p>
+      </div>
+    </div>
+    <div class="steps" data-panel="ios" data-ipanel="safari">
       <div class="alert warn" id="iosNotSafari">Модулът работи само в <b>Safari</b>. Отвори тази страница в Safari:
         <div class="row" style="margin-top:10px"><a class="btn" id="iOpenSafari" href="#">Отвори в Safari</a><button class="btn sec" id="copyLink" type="button">Копирай линка</button></div>
       </div>
@@ -227,6 +261,11 @@ footer{padding:30px 0 calc(40px + env(safe-area-inset-bottom));color:var(--mut);
           <li>Пак <span class="kbd">ⓐA</span> → <b>Userscripts</b> → натисни реда <b>„Userscript Detected: Tap to install“</b> → <b>Install</b>.</li>
         </ol>
         <p class="mut" style="font-size:14px">Върни се на тази страница. Ако всичко е наред, горе ще се появи зелено „✅ YT Контрол е инсталиран“.</p>
+      </div>
+      <div class="step" data-step="i5">
+        <div class="hd"><div class="num"><span>✓</span></div><h3>Провери, че всичко работи</h3></div>
+        <p class="mut">Бутонът отваря YouTube заедно с панела на YT Контрол. Трябва да видиш <b>🟢 Пълна защита</b>. Ако не се отвори панел, модулът не е разрешен за YouTube: повтори второто действие от стъпка 2 („Винаги разрешавай на всеки уебсайт“).</p>
+        <div class="row"><a class="btn sec" href="https://m.youtube.com/#ytc">▶ Отвори YouTube и провери</a></div>
       </div>
       <div class="step" data-step="i4">
         <div class="hd"><div class="num"><span>3</span></div><h3>Икона на началния екран</h3></div>
@@ -264,6 +303,8 @@ footer{padding:30px 0 calc(40px + env(safe-area-inset-bottom));color:var(--mut);
 
 <script>
 (function () {
+  // Публичният линк от TestFlight (работният процес го отпечатва). Празно = вариантът „Приложение“ още не е наличен.
+  var TESTFLIGHT = '';
   var ua = navigator.userAgent;
   var isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   var isAndroid = /Android/i.test(ua);
@@ -280,7 +321,22 @@ footer{padding:30px 0 calc(40px + env(safe-area-inset-bottom));color:var(--mut);
   function show(os) {
     document.querySelectorAll('.tab').forEach(function (t) { t.classList.toggle('on', t.dataset.os === os); });
     document.querySelectorAll('[data-panel]').forEach(function (p) { p.style.display = p.dataset.panel === os ? '' : 'none'; });
+    if (os === 'ios') showIos(iosWay);
   }
+  // iPhone: приложение (TestFlight) или Safari
+  var iosWay = 'safari';
+  try { iosWay = localStorage.getItem('ytc-ios-way') || (TESTFLIGHT ? 'app' : 'safari'); } catch (e) {}
+  if (!TESTFLIGHT) iosWay = 'safari';
+  function showIos(w) {
+    iosWay = w;
+    try { localStorage.setItem('ytc-ios-way', w); } catch (e) {}
+    document.querySelectorAll('.opt').forEach(function (o) { o.classList.toggle('on', o.dataset.ios === w); });
+    document.querySelectorAll('[data-ipanel]').forEach(function (p) { p.style.display = p.dataset.ipanel === w ? '' : 'none'; });
+  }
+  var appOpt = document.querySelector('.opt[data-ios="app"]');
+  if (TESTFLIGHT) document.getElementById('tfBtn').href = TESTFLIGHT;
+  else { appOpt.disabled = true; appOpt.querySelector('small').textContent = 'Скоро: приложението е в тестване.'; }
+  document.querySelectorAll('.opt').forEach(function (o) { o.addEventListener('click', function () { if (!o.disabled) showIos(o.dataset.ios); }); });
   document.querySelectorAll('.tab').forEach(function (t) { t.addEventListener('click', function () { show(t.dataset.os); }); });
   var os = isIOS ? 'ios' : 'android';
   show(os);
@@ -291,7 +347,7 @@ footer{padding:30px 0 calc(40px + env(safe-area-inset-bottom));color:var(--mut);
   else document.getElementById('desk').classList.add('on');
 
   // ----- iOS: отваряне в Safari -----
-  if (isIOS && !isSafari) {
+  if (isIOS && !isSafari) {  // важи само за пътя „През Safari“ (стои в неговия панел)
     document.getElementById('iosNotSafari').classList.add('on');
     document.getElementById('iOpenSafari').href = 'x-safari-' + here;
   }
